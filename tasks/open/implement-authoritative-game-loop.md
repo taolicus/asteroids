@@ -23,3 +23,10 @@ delivers the loop skeleton with placeholder state.
 - Tick rate and broadcast rate verified by tests or instrumentation.
 - `go test -race` clean; one busy or slow room does not stall others.
 - Loop stops cleanly with no leaked goroutines when a room ends.
+
+## Outcome
+
+Implemented in `internal/game` (`Sim`); all rate, isolation, and
+shutdown tests pass on android/arm64. Limitation: `go test -race` is
+not supported on this device (Termux/Pixel 7 Pro) — the race run must
+be done on the laptop before this is fully verified.
