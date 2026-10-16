@@ -17,6 +17,24 @@ A browser-based, two-player cooperative micro-game inspired by the classic arcad
 - **Simulation:** Fixed timestep of approximately 30 ticks per second, broadcasting state snapshots at approximately 10–15 Hz. Clients interpolate snapshots for smooth rendering.
 - **Deployment:** A publicly hosted Go server serves the game and manages multiplayer sessions. Players join using a shareable room link, with no installation required.
 
+## Running
+Requires Go (see `go.mod` for the version). No frontend build step and no
+third-party dependencies.
+
+```
+go run ./cmd/server
+```
+
+The server listens on port `8080` by default. Override it with the `-port`
+flag or the `PORT` environment variable:
+
+```
+PORT=9000 go run ./cmd/server
+go run ./cmd/server -port 9000
+```
+
+Then open `http://localhost:8080/` in a browser.
+
 ## MVP Scope
 1. Create and join a two-player room through a link.
 2. Assign players to the pilot and gunner roles.
