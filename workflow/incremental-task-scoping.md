@@ -1,58 +1,60 @@
 # Incremental Task Scoping
 
-Break substantial work into the smallest set of coherent tasks that improves
-reviewability, reduces risk, or enables useful progress independently.
-Avoid both oversized tasks and unnecessary task fragmentation.
+Break substantial work into the smallest practical set of coherent tasks that
+materially improves reviewability, reduces risk, resolves uncertainty, or
+enables independent progress.
+
+Prefer the simplest workable breakdown. Avoid both oversized tasks and excessive
+fragmentation.
 
 ## When to split
 
-Split work when one or more of these conditions apply:
-- A meaningful part can be implemented, verified, and reviewed independently.
-- The work contains distinct outcomes with different acceptance criteria.
-- A step resolves significant uncertainty before a larger implementation begins.
-- Separating changes reduces regression risk or makes failures easier to diagnose.
-- Different steps have real dependencies or can be completed independently.
-- The change is large enough that reviewing it as one unit would be difficult.
+Split work when:
+- A meaningful outcome can be implemented and verified independently.
+- Distinct outcomes have different acceptance criteria.
+- A step resolves significant uncertainty before further implementation.
+- Separation materially reduces regression risk or simplifies diagnosis.
+- Dependencies require a clear execution order.
 
-Do not split work merely because it touches multiple files, layers, or technical
-steps. Keep tightly coupled changes together when splitting would create artificial
-boundaries or provide no meaningful review or verification benefit.
+Do not split merely because work touches multiple files, layers, or technical
+steps. Keep tightly coupled changes together when splitting adds artificial
+boundaries, scaffolding, or extra coordination without meaningful benefit.
 
-## Define each task
+## Size and acceptance criteria
 
-Each task should describe:
+A small, routine change should usually remain one task. Substantial work may need
+a short plan and several tasks. Use a detailed breakdown only when complexity,
+risk, or dependencies justify it.
+
+Each task should define:
 - One coherent outcome.
-- The scope and important constraints.
+- Scope and important constraints.
 - Observable acceptance criteria.
-- Appropriate tests or other verification.
-- Dependencies, when they genuinely constrain execution.
+- Relevant verification.
+- Genuine dependencies, if any.
 
-Keep the number of tasks proportional to the work. A small, routine change should
-usually remain one task. Do not create separate tasks for trivial edits, routine
-substeps, or every file touched. Reassess the breakdown after investigation if the
-actual complexity differs from the initial estimate.
+Make each task small enough for a focused review but large enough to deliver
+meaningful value. Do not create tasks for trivial edits, routine substeps, or
+every file touched.
 
 ## Preserve repository coherence
 
-Every completed task should leave the repository in a coherent, reviewable state.
-Where applicable, it should build and pass the relevant tests. Avoid intermediate
-states that leave the main code path broken, required interfaces inconsistent,
-or unrelated functionality unusable.
+A completed task should leave the repository in a coherent, reviewable state.
+Where applicable, it should build and pass relevant tests.
 
-Order dependent tasks so that each step leaves a valid state. Use compatibility
-layers, incremental migrations, feature flags, or temporary adapters when they
-make intermediate states safe and the extra complexity is justified.
+Order dependent work so intermediate states remain valid. Use compatibility
+layers, feature flags, adapters, or incremental migrations only when needed to
+keep intermediate states safe and the added complexity is justified.
 
-If work cannot be divided into independently coherent outcomes without excessive
-scaffolding or artificial boundaries, keep the tightly coupled changes in one
-task. Do not pretend that an unsafe intermediate state is independently complete.
+If changes cannot be separated without breaking the repository or adding
+excessive scaffolding, keep the coupled work together. Do not label an unsafe
+intermediate state as independently complete.
 
-## Review and completion
+## Stop decomposing
 
-Make each task small enough for a focused review, but large enough to deliver
-a meaningful change. Verify its acceptance criteria before treating it as complete.
-Commit completed task changes according to `commit-policy.md`.
+Once each task has a coherent outcome, clear acceptance criteria, and a safe
+implementation path, stop decomposing and begin work.
 
-If implementation reveals additional independent work, create or update the
-appropriate issue or task instead of silently expanding scope. Record dependencies
-when they affect execution order. Keep the overall breakdown as simple as possible.
+Reassess the breakdown only when new information materially changes the scope,
+risk, dependencies, or feasibility. If implementation reveals independent work
+outside scope, record it separately instead of silently expanding the task.

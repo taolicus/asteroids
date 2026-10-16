@@ -1,48 +1,28 @@
 # Work Item Metadata
 
-Keep metadata minimal. No metadata field is mandatory.
+Metadata is optional. Use it only when it adds practical value.
 
-## Supported fields
+## Area
 
-### area
+- `area` is an optional, single slug for grouping or filtering work.
+- Omit it when it provides no useful distinction.
 
-- Optional single slug identifying a meaningful project area.
-- Reuse existing convention slugs where possible.
-- Introduce a new slug only when it provides a useful, recurring distinction.
-- Omit the field when it adds no practical value.
-- Do not create directory structures based on area values.
+## Dependencies
 
-### dependencies
+- `dependencies` is an optional list of work item filenames.
+- Each reference must resolve to an item in `issues/`, `tasks/open/`,
+  or `tasks/closed/`.
+- Filenames must be unique across these directories.
+- Preserve filenames when moving items between lifecycle directories.
+- Update references if a referenced file is renamed or removed.
+- Dependencies represent genuine execution constraints, not merely related work.
+- Check declared dependencies before implementation.
+- For completed dependencies, inspect their recorded outcome and current code
+  only as needed to determine whether the requirement is satisfied.
+- If an unresolved dependency blocks the task, record the blocker and determine
+  the appropriate next step. Do not silently work around it.
+- Do not investigate unrelated dependency history.
+- Omit the field when no dependencies apply.
 
-- Optional list of work-item filenames that must be completed or resolved
-  before the current task can proceed.
-- Reference filenames, not titles or paths.
-- Keep work-item filenames unique across issues/, tasks/open/, and
-  tasks/closed/ so references are unambiguous.
-- Each reference must resolve to an existing work item in one of those
-  directories.
-- Before implementation, inspect the referenced items and determine whether
-  their dependencies have been satisfied.
-- Preserve filenames when moving items through their lifecycle. If a file
-  is renamed or removed, update references to it.
-- Omit the field when no dependencies exist.
-
-Use dependencies only for genuine execution constraints, not merely related
-work. Put rationale, context, and other constraints in the item description.
-
-## Priority
-
-Do not store priority as work-item metadata. Decide what to work on during
-planning conversations, based on current goals, constraints, available time,
-device access, and dependencies.
-
-## Example
-
----
-area: authentication
-dependencies:
-  - define-authentication-contract.md
-  - migrate-session-storage.md
----
-
-Both fields are optional. Omit them when they do not add value.
+Do not add a priority field. Decide what to work on during planning based on
+the task, constraints, dependencies, and available time.

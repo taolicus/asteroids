@@ -1,10 +1,16 @@
 # Agent Instructions
 
-Read this file first, then consult workflow/README.md and the
-relevant workflow rules before acting.
+Read `workflow/README.md` before working on this project.
 
-Check tasks/open/ and relevant feature documentation before implementing
-work.
+Follow the relevant workflow rules. Inspect only the context needed for the
+task, preserve existing work, avoid unrelated changes, and keep the repository
+in a coherent state.
 
-Keep issues, actionable tasks, and durable feature documentation separate.
-Follow the work-item lifecycle defined in workflow/README.md.
+Use:
+- `issues/` for unresolved observations, problems, and questions.
+- `tasks/open/` for actionable work.
+- `tasks/closed/` for completed tasks retained for history.
+- `features/` for durable knowledge about the implemented system.
+
+Put reusable workflow lessons in `workflow/`. Do not use commit messages or
+conversation history as substitutes for durable documentation.
