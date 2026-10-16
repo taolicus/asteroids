@@ -27,6 +27,7 @@ delivers the loop skeleton with placeholder state.
 ## Outcome
 
 Implemented in `internal/game` (`Sim`); all rate, isolation, and
-shutdown tests pass on android/arm64. Limitation: `go test -race` is
-not supported on this device (Termux/Pixel 7 Pro) — the race run must
-be done on the laptop before this is fully verified.
+shutdown tests pass on android/arm64. `go test -race` cannot run on
+this device (Termux/Pixel 7 Pro), so the race run was verified by the
+GitHub Actions CI on ubuntu-latest (linux/amd64, cgo enabled) — see
+`features/continuous-integration.md`. All acceptance criteria met.
