@@ -24,3 +24,7 @@ playtests are possible, per `determine-deployment-and-room-links.md`:
   initial success criteria.
 - Room links open and work for a recipient who was not involved in
   creating the room.
+- The instance comes back up on its own after a crash, verified by
+  stopping the running process and confirming it restarts.
+- Server logs can be retrieved from the host to diagnose a failed
+  playtest.
