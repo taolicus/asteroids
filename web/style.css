@@ -33,3 +33,59 @@ h1 {
   background: #11141d;
   border: 1px solid #2a2f3d;
 }
+
+section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 480px;
+  text-align: center;
+}
+
+.tagline {
+  color: #aeb4c2;
+  line-height: 1.5;
+}
+
+.hint {
+  color: #767d8d;
+  font-size: 0.875rem;
+}
+
+button {
+  padding: 0.7rem 1.4rem;
+  border: 1px solid #3d4f7a;
+  border-radius: 6px;
+  background: #1c2740;
+  color: #e6e6e6;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button:active {
+  background: #26335420;
+}
+
+#error-message {
+  color: #ff9b8a;
+  line-height: 1.5;
+}
+
+.share {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+#share-link {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #2a2f3d;
+  border-radius: 6px;
+  background: #11141d;
+  color: #aeb4c2;
+  font-size: 0.9rem;
+  text-align: center;
+}

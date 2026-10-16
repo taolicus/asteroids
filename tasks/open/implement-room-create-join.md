@@ -34,3 +34,21 @@ Two-player rooms with role assignment, per the settled decisions in
 - Two browsers: one creates a room, the other opens the link; both
   see their assigned role and the waiting screen state.
 - Expired rooms release all their state (no unbounded growth).
+
+## Outcome
+
+Implemented `internal/rooms` (IDs, roles, tokens, presence, expiry with
+an injectable clock and one server-wide sweep goroutine),
+`internal/server` (the API above), and the room UI in `web/` (create,
+join-via-link, role and waiting screen, share link, readable 404/409
+states, localStorage tokens). Documented in `features/rooms.md`.
+
+Verified: `go vet` and `go test ./...` pass — rooms and server tests
+cover every criteria bullet except the two-browser one — plus an
+end-to-end curl smoke test against the running server (create, both
+joins, 409/404/401, token reattach, status transitions, share link
+page). CI runs the same suite with `-race`.
+
+Outstanding: the two-browser check cannot run on this device (no
+browser installed). It stays open until someone opens a created link
+in a second browser and confirms both role/waiting states.
