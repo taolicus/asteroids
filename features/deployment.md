@@ -29,8 +29,9 @@ service, and polls the public URL until it answers.
 ./deploy.sh
 ```
 
-On the dev device the repository sits on a filesystem without the
-executable bit, so use `bash deploy.sh` there.
+The script is POSIX `sh` — `sh deploy.sh` and `bash deploy.sh` both
+work. On the dev device the repository sits on a filesystem without the
+executable bit, so use `sh deploy.sh` there.
 
 Overridable: `DEPLOY_HOST` (default `tao`), `DEPLOY_DIR` (default
 `/home/dev/asteroids`), `HEALTH_URL` (default the public root).

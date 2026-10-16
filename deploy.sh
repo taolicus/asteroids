@@ -1,17 +1,19 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Build the server binary and deploy it to the production VPS.
 #
 # Deployment is deliberately just "copy the binary": systemd
 # (asteroids.service) and nginx (asteroids.pifia.net) are already set
 # up on the host. See features/deployment.md.
-set -euo pipefail
+#
+# POSIX sh only: works with sh, dash, bash, or ash.
+set -eu
 
 HOST="${DEPLOY_HOST:-tao}"
 REMOTE_DIR="${DEPLOY_DIR:-/home/dev/asteroids}"
 SERVICE="asteroids"
 HEALTH_URL="${HEALTH_URL:-https://asteroids.pifia.net/}"
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$(dirname "$0")" && pwd)"
 cd "$repo_root"
 
 build_dir="$(mktemp -d)"
@@ -30,11 +32,13 @@ echo "==> restarting $SERVICE"
 ssh "$HOST" "systemctl restart $SERVICE"
 
 echo "==> checking $HEALTH_URL"
-for _ in $(seq 1 20); do
+i=0
+while [ "$i" -lt 20 ]; do
   if curl -fsS -o /dev/null "$HEALTH_URL"; then
     echo "==> deployed"
     exit 0
   fi
+  i=$((i + 1))
   sleep 1
 done
 
