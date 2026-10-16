@@ -31,14 +31,21 @@ playtests are possible, per `determine-deployment-and-room-links.md`:
 
 ## Progress
 
-Host and deployment mechanism are in place (`features/deployment.md`):
-the VPS at `asteroids.pifia.net` has the systemd unit, nginx TLS vhost,
-and SSE-ready `/events` proxy; `deploy.sh` builds the linux/amd64 binary,
-copies it, restarts the unit, and health-checks the public URL.
+Host and deployment mechanism are in place and verified
+(`features/deployment.md`): the VPS at `asteroids.pifia.net` serves the
+deployed build over HTTPS through the systemd unit and nginx vhost;
+`deploy.sh` builds the linux/amd64 binary, copies it, restarts the unit,
+and health-checks the public URL.
+
+Verified on the host:
+
+- Public HTTPS serves the room UI and API (create/join exercised
+  through `https://asteroids.pifia.net`).
+- Crash restart: killing the main process (`kill -9`) brought it back
+  automatically as a new PID with the service still active.
+- Logs: `journalctl -u asteroids` shows startup and the killed process.
 
 Remaining before this can close:
 
-- Deploy the current build and verify the crash-restart and log
-  criteria on the host.
 - After gameplay lands (this task also waits on touch controls), run
   the two-device playtest that the main acceptance criteria require.
