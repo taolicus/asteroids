@@ -28,3 +28,17 @@ playtests are possible, per `determine-deployment-and-room-links.md`:
   stopping the running process and confirming it restarts.
 - Server logs can be retrieved from the host to diagnose a failed
   playtest.
+
+## Progress
+
+Host and deployment mechanism are in place (`features/deployment.md`):
+the VPS at `asteroids.pifia.net` has the systemd unit, nginx TLS vhost,
+and SSE-ready `/events` proxy; `deploy.sh` builds the linux/amd64 binary,
+copies it, restarts the unit, and health-checks the public URL.
+
+Remaining before this can close:
+
+- Deploy the current build and verify the crash-restart and log
+  criteria on the host.
+- After gameplay lands (this task also waits on touch controls), run
+  the two-device playtest that the main acceptance criteria require.

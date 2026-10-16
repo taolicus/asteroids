@@ -21,6 +21,13 @@ func main() {
 	port := flag.String("port", defaultPort, "HTTP listen port")
 	flag.Parse()
 
+	// ADDR is a full host:port, used by the production unit. It takes
+	// precedence over the port flag.
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = fmt.Sprintf(":%s", *port)
+	}
+
 	mgr := rooms.NewManager()
 	// Single server-wide expiry sweeper; it lives for the process
 	// lifetime. Individual rooms never own goroutines.
@@ -30,7 +37,6 @@ func main() {
 	mux.Handle("/api/", server.Handler(mgr))
 	mux.Handle("/", http.FileServer(http.FS(web.FS)))
 
-	addr := fmt.Sprintf(":%s", *port)
 	log.Printf("serving on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)

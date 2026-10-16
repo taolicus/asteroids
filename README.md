@@ -33,6 +33,9 @@ PORT=9000 go run ./cmd/server
 go run ./cmd/server -port 9000
 ```
 
+`ADDR` (a full `host:port`) takes precedence over both; the production
+systemd unit uses it. See `features/deployment.md`.
+
 Then open `http://localhost:8080/` in a browser.
 
 ## MVP Scope
