@@ -17,7 +17,7 @@ const (
 
 // Intent is a player's latest intention. Only the fields for the
 // player's role are meaningful: Rotate and Thrust for the pilot, Fire
-// for the gunner.
+// and Aim for the gunner.
 type Intent struct {
 	// Seq is the client's monotonic counter; it orders posts that the
 	// network may reorder or duplicate.
@@ -28,6 +28,10 @@ type Intent struct {
 	Thrust bool
 	// Fire is the gunner's fire button.
 	Fire bool
+	// Aim is the gunner's turret direction in radians, an absolute
+	// world angle. It is optional: without one the turret follows the
+	// ship's heading, which is also where a stale intent leaves it.
+	Aim *float64
 }
 
 // neutral is the intent applied when a role's latest intent has gone

@@ -28,10 +28,10 @@ An intent is role-specific, but the payload does not name its role: the
 server derives it from the caller's seat, so a client cannot claim the
 other role.
 
-The owner seat is the pilot and the guest seat is the gunner until
-per-round role rolling lands (`implement-round-flow-and-replay.md`).
-When it does, only the server-side mapping changes; the wire format
-stays as it is.
+Roles are rolled per round (`implement-round-flow-and-replay.md`): the
+server finds the seat holding the round's pilot and derives the caller's
+role from that, so the payload never names a role and a client cannot
+claim the other one. The wire format is the same either way.
 
 ## Payloads
 
@@ -48,12 +48,15 @@ Pilot:
 Gunner:
 
 ```json
-{"seq": 7, "fire": false}
+{"seq": 7, "fire": false, "aim": 1.5708}
 ```
 
-- `fire` — bool. Whether the gunner aims independently of ship heading
-  is settled in `define-touch-control-scheme.md`; if turret aim is
-  adopted it only adds an aim field here.
+- `fire` — bool.
+- `aim` — optional absolute turret direction in radians, `0` along +X.
+  The gunner aims independently of the ship's heading (settled in
+  `define-touch-control-scheme.md`); the sim folds the value into
+  [-π, π). Omitted, or stale, means the ship's heading, so the field is
+  additive for a client that never aims.
 
 Decoding is strict: an unknown field, a wrong type, an empty body, or a
 `rotate` outside {-1, 0, +1} is a 400. A gunner sending `rotate` is
@@ -90,7 +93,7 @@ this held button still held".
 | Situation | Status |
 | --- | --- |
 | Accepted, including a coalesced or dropped stale post | 200 |
-| Malformed body, unknown field, bad `rotate`, or the wrong role's field | 400 |
+| Malformed body, unknown field, bad `rotate`, bad `aim`, or the wrong role's field | 400 |
 | No token, or a token holding no seat in this lobby | 401 |
 | Invalid lobby ID, or a valid one whose instance has been reclaimed | 404 |
 | Lobby not ready (both players not present) | 409 |

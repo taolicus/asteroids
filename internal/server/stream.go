@@ -69,7 +69,9 @@ type shipState struct {
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
 	Heading float64 `json:"heading"`
-	Invuln  float64 `json:"invuln"`
+	// Turret is the gunner's aim in radians, independent of the heading.
+	Turret float64 `json:"turret"`
+	Invuln float64 `json:"invuln"`
 }
 
 type rockState struct {
@@ -107,6 +109,7 @@ func snapshotFor(snap game.Snapshot) snapshot {
 			X:       snap.Ship.Pos.X,
 			Y:       snap.Ship.Pos.Y,
 			Heading: snap.Ship.Heading,
+			Turret:  snap.Turret,
 			Invuln:  snap.Invuln,
 		}
 	}

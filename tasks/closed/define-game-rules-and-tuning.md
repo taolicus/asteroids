@@ -41,11 +41,12 @@ client scales the fixed arena to its viewport.
 
 ## Weapons
 
-- Projectiles travel along the ship's heading at 500 units/s, lifespan
+- Projectiles travel along the turret's aim at 500 units/s, lifespan
   1.5s, maximum 6 live projectiles, fire cooldown 300ms.
-- Whether the gunner can aim independently of ship heading is settled
-  in `define-touch-control-scheme.md`; if turret aim is adopted it
-  changes only the fire direction, not these constants.
+- The gunner aims independently of the ship's heading (settled in
+  `define-touch-control-scheme.md`): the shot leaves along the posted
+  aim, or along the heading when there is none. This changes only the
+  fire direction, not these constants.
 
 ## Scoring and round end
 

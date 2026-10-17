@@ -273,13 +273,14 @@ func decodeIntent(r io.Reader, role game.Role) (game.Intent, error) {
 		in = game.Intent{Seq: body.Seq, Rotate: body.Rotate, Thrust: body.Thrust}
 	case game.RoleGunner:
 		var body struct {
-			Seq  uint64 `json:"seq"`
-			Fire bool   `json:"fire"`
+			Seq  uint64   `json:"seq"`
+			Fire bool     `json:"fire"`
+			Aim  *float64 `json:"aim"`
 		}
 		if err := dec.Decode(&body); err != nil {
 			return in, err
 		}
-		in = game.Intent{Seq: body.Seq, Fire: body.Fire}
+		in = game.Intent{Seq: body.Seq, Fire: body.Fire, Aim: body.Aim}
 	default:
 		return in, fmt.Errorf("unknown role %q", role)
 	}

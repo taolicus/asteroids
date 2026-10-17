@@ -238,7 +238,7 @@ func TestSnapshotForMapsTheRoundState(t *testing.T) {
 
 	playing := snapshotFor(game.Snapshot{
 		Seq: 1, Tick: 2, Round: 4, Phase: game.PhasePlaying, Pilot: game.PlayerOne,
-		Lives: game.StartLives, Invuln: 1.5,
+		Lives: game.StartLives, Invuln: 1.5, Turret: 2.5,
 	})
 	if playing.Phase != string(game.PhasePlaying) || playing.Ship == nil {
 		t.Fatalf("playing phase/ship = %q/%v", playing.Phase, playing.Ship)
@@ -248,6 +248,9 @@ func TestSnapshotForMapsTheRoundState(t *testing.T) {
 	}
 	if playing.Ship.Invuln != 1.5 {
 		t.Fatalf("invuln = %v, want 1.5", playing.Ship.Invuln)
+	}
+	if playing.Ship.Turret != 2.5 {
+		t.Fatalf("turret = %v, want the sim's 2.5", playing.Ship.Turret)
 	}
 	// Empty arrays, not null: the renderer iterates them unconditionally.
 	if playing.Rocks == nil || playing.Shots == nil {

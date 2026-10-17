@@ -29,6 +29,11 @@ type world struct {
 	rocks []Asteroid
 	shots []Projectile
 
+	// turret is where the gunner is aiming, in radians: the direction
+	// the next shot leaves along. It is the posted aim when there is
+	// one and the ship's heading otherwise.
+	turret float64
+
 	lives       int
 	score       int
 	survival    float64
@@ -74,12 +79,23 @@ func (w *world) step(tick uint64, pilotIn, gunnerIn Intent, dt float64) {
 
 	w.survival += dt
 	stepShip(&w.ship, pilotIn, dt)
+	w.turret = w.turretAngle(gunnerIn)
 	stepAsteroids(w.rocks, dt)
 	w.spawn(tick)
 	w.fire(tick, gunnerIn)
 	stepProjectiles(w.shots, dt)
 	w.resolveCollisions(tick)
 	w.expireProjectiles(tick)
+}
+
+// turretAngle is the gunner's aim this tick: the posted aim when there is
+// one, and the ship's nose otherwise. The aim is folded into [-π, π) so a
+// client cannot leave the turret parked on some far-away angle.
+func (w *world) turretAngle(in Intent) float64 {
+	if in.Aim == nil {
+		return w.ship.Heading
+	}
+	return wrapAngle(*in.Aim)
 }
 
 // spawn lets a new large asteroid in from an edge on the spawn cadence,
@@ -103,7 +119,7 @@ func (w *world) fire(tick uint64, in Intent) {
 		return
 	}
 	w.fireReadyAt = tick + secondsTicks(WeaponTuning.Cooldown)
-	w.shots = append(w.shots, newProjectile(w.nextShotID, w.ship, tick))
+	w.shots = append(w.shots, newProjectile(w.nextShotID, w.ship.Pos, w.turret, tick))
 	w.nextShotID++
 }
 
@@ -195,6 +211,7 @@ func (w *world) snapshot(seq, tick uint64) Snapshot {
 		Seq:      seq,
 		Tick:     tick,
 		Ship:     w.ship,
+		Turret:   w.turret,
 		Lives:    w.lives,
 		Score:    w.score,
 		Survival: w.survival,

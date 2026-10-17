@@ -26,8 +26,9 @@ is no bundler or build step. `web/web.go` embeds all of them.
 - It snaps (uses the newer snapshot directly) instead of smearing when the
   two bracketing snapshots are more than 250 ms apart, or when a paired
   entity moved more than 300 units.
-- Positions interpolate along the shortest wrapped path, and headings
-  along the shortest angular path.
+- Positions interpolate along the shortest wrapped path, and headings and
+  the turret angle along the shortest angular path. The turret is
+  interpolated on its own: it is the gunner's aim, not the hull's.
 - Entities are paired by `id`, with the newer snapshot as the base, so a
   destroyed rock or expired shot disappears promptly and a new one appears
   at its spawn position.
@@ -51,7 +52,9 @@ time the stream connects, which resets the `seq` watermark.
   seam slides out one side and in the other.
 - Rocks are stroked circles; shots are small filled circles; the shared
   ship is a filled triangle rotated to its heading, blinking to a lower
-  alpha while `invuln > 0`.
+  alpha while `invuln > 0`. The turret is a barrel stroked from the ship's
+  centre along its own angle, so it reads whatever direction it points; a
+  view with no turret falls back to the heading, the sim's own default.
 - The HUD is DOM (`#hud`), not canvas, so it stays crisp and testable:
   score, survival seconds, lives, and the player's role for this round.
 

@@ -93,8 +93,14 @@ Rules and tuning are settled in
 ## Weapons and death
 
 - Projectiles are spawned when the gunner holds fire, travel along the
-  ship's heading at 500 units/s for 1.5 s, and are capped at 6 live. The
+  turret's aim at 500 units/s for 1.5 s, and are capped at 6 live. The
   fire cooldown is 300 ms (9 ticks).
+- The turret is independent of the hull: the gunner's posted `aim` is an
+  absolute angle, and without one — a client that never aims, or an
+  intent that has gone stale — the turret falls back to the ship's
+  heading. Only the direction differs from a nose-aligned shot; the
+  tuning and the step order are unchanged (the scheme is settled in
+  `tasks/closed/define-touch-control-scheme.md`).
 - A projectile consumes itself on the first rock it overlaps, awards that
   tier's score, and splits the rock.
 - A ship–asteroid overlap costs one shared life; the ship respawns at the
@@ -111,7 +117,9 @@ Rules and tuning are settled in
 - The arena is a fixed square, `ArenaSize` = 1000 units, wraparound on
   all edges (see `tasks/closed/define-game-rules-and-tuning.md`).
 - `Ship` is position, velocity, and heading, with heading in radians and
-  0 along +X. It spawns at the arena centre with no motion.
+  0 along +X. It spawns at the arena centre with no motion. The gunner's
+  aim is separate state (`Snapshot.Turret`), so the hull and the barrel
+  can point different ways.
 - `stepShip` is the physics: rotation from the pilot's turn axis,
   thrust along the heading, light exponential damping, a speed cap, and
   wraparound. It is a pure function of `(ship, intent, dt)`, so physics
@@ -136,6 +144,10 @@ Clients send intentions, never state; the contract is settled in
   than the seat: the server asks the sim (`RoleOf`) which seat is flying
   and which gunning, so a client cannot claim the other role. Decoding is
   strict: an unknown field or the other role's field is a 400.
+- The gunner's payload also carries an optional `aim`: an absolute angle
+  in radians, `0` along +X. The sim folds it into [-π, π) and falls back
+  to the ship's heading when it is absent, so the field is additive and a
+  client that never aims keeps the old behaviour.
 - Intents are latest-state. The loop keeps one intent slot per role and
   samples it every tick; a post whose `seq` is not newer is coalesced
   away rather than erroring.
@@ -214,7 +226,9 @@ the DTO lives in `internal/server/stream.go`.
   `phase` is the round's `waiting`/`playing`/`over`; `round` counts the
   room's rounds; `pilot` is the seat flying this round (the other seat
   is the gunner). `ship` is `null` unless the phase is `playing`: there
-  is no ship before a round plays or once it is over. Empty
+  is no ship before a round plays or once it is over. A ship carries `x`,
+  `y`, `heading`, `turret`, and `invuln`; `turret` is the gunner's aim in
+  radians, so both copilots see where the gun points. Empty
   `rocks`/`shots` are `[]`, never `null`, in every phase.
 - Writes carry a deadline, so a client that stops reading is
   disconnected instead of pinning its handler. The sim's capacity-1

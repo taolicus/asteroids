@@ -22,9 +22,9 @@ var WeaponTuning = struct {
 	Cooldown: 0.3,
 }
 
-// Projectile is one shot. It follows the ship's heading; independent
-// turret aim is deferred to define-touch-control-scheme.md and would
-// change only the direction, not the tuning.
+// Projectile is one shot. It travels along the turret's aim, which is
+// the gunner's independent direction and falls back to the ship's
+// heading. Tuning is unaffected: only the direction differs.
 type Projectile struct {
 	ID  uint64
 	Pos Vec2
@@ -33,15 +33,15 @@ type Projectile struct {
 	ExpiresAt uint64
 }
 
-// newProjectile spawns a shot at the ship's nose, travelling along its
-// heading. Ticks are back-converted from the settled seconds.
-func newProjectile(id uint64, ship Ship, tick uint64) Projectile {
+// newProjectile spawns a shot at the ship, travelling along angle. Ticks
+// are back-converted from the settled seconds.
+func newProjectile(id uint64, pos Vec2, angle float64, tick uint64) Projectile {
 	return Projectile{
 		ID:  id,
-		Pos: ship.Pos,
+		Pos: pos,
 		Vel: Vec2{
-			X: math.Cos(ship.Heading) * WeaponTuning.Speed,
-			Y: math.Sin(ship.Heading) * WeaponTuning.Speed,
+			X: math.Cos(angle) * WeaponTuning.Speed,
+			Y: math.Sin(angle) * WeaponTuning.Speed,
 		},
 		ExpiresAt: tick + secondsTicks(WeaponTuning.Lifespan),
 	}

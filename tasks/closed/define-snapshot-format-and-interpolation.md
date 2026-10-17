@@ -77,7 +77,7 @@ event). The schema:
   "lives": 3,
   "score": 120,
   "time": 12.4,
-  "ship": {"x": 500, "y": 500, "heading": 0, "invuln": 0},
+  "ship": {"x": 500, "y": 500, "heading": 0, "turret": 0, "invuln": 0},
   "rocks": [{"id": 1, "x": 120.5, "y": 800, "radius": 40}],
   "shots": [{"id": 9, "x": 505, "y": 500}]
 }
@@ -92,8 +92,10 @@ event). The schema:
 - `lives`, `score`, `time` — shared HUD state; `time` is the survival
   timer in seconds, counted by the server so both clients agree.
 - `ship` — the shared ship, or `null` when there is no live ship (not
-  playing). `heading` is radians, 0 along +X; `invuln` is the remaining
-  invulnerability in seconds, for the flashing render.
+  playing). `heading` is radians, 0 along +X; `turret` is the gunner's
+  aim in radians, independent of the heading and falling back to it;
+  `invuln` is the remaining invulnerability in seconds, for the flashing
+  render.
 - `rocks` — `id`, position, `radius` (the tier). No velocity: motion
   comes from interpolation, not extrapolation.
 - `shots` — `id` and position; radius is a constant the client knows.

@@ -22,27 +22,26 @@ func TestSecondsTicksTracksTheSettledDurations(t *testing.T) {
 	}
 }
 
-func TestNewProjectileFollowsTheHeading(t *testing.T) {
-	ship := Ship{Pos: Vec2{X: 100, Y: 200}}
-	p := newProjectile(3, ship, 10)
+func TestNewProjectileTravelsAlongItsAngle(t *testing.T) {
+	pos := Vec2{X: 100, Y: 200}
+	p := newProjectile(3, pos, 0, 10)
 
 	if p.ID != 3 {
 		t.Errorf("ID = %d, want 3", p.ID)
 	}
-	if p.Pos != ship.Pos {
-		t.Errorf("spawn pos = %v, want %v", p.Pos, ship.Pos)
+	if p.Pos != pos {
+		t.Errorf("spawn pos = %v, want %v", p.Pos, pos)
 	}
 	if !approx(p.Vel.X, WeaponTuning.Speed) || math.Abs(p.Vel.Y) > 1e-9 {
-		t.Errorf("heading 0 velocity = %v, want (%v, 0)", p.Vel, WeaponTuning.Speed)
+		t.Errorf("angle 0 velocity = %v, want (%v, 0)", p.Vel, WeaponTuning.Speed)
 	}
 	if want := uint64(10) + secondsTicks(WeaponTuning.Lifespan); p.ExpiresAt != want {
 		t.Errorf("ExpiresAt = %d, want %d", p.ExpiresAt, want)
 	}
 
-	ship.Heading = math.Pi
-	p = newProjectile(4, ship, 0)
+	p = newProjectile(4, pos, math.Pi, 0)
 	if !approx(p.Vel.X, -WeaponTuning.Speed) || math.Abs(p.Vel.Y) > 1e-9 {
-		t.Errorf("heading pi velocity = %v, want (-%v, 0)", p.Vel, WeaponTuning.Speed)
+		t.Errorf("angle pi velocity = %v, want (-%v, 0)", p.Vel, WeaponTuning.Speed)
 	}
 }
 

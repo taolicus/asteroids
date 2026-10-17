@@ -28,7 +28,12 @@ function snapshot(overrides = {}) {
 
 // moving is a snapshot whose ship has advanced to x.
 function moving(seq, x) {
-  return snapshot({ seq, tick: seq, time: seq, ship: { x, y: 0, heading: 0, invuln: 0 } });
+  return snapshot({
+    seq,
+    tick: seq,
+    time: seq,
+    ship: { x, y: 0, heading: 0, turret: 0, invuln: 0 },
+  });
 }
 
 test.describe("snapshot interpolation", () => {
@@ -139,6 +144,23 @@ test.describe("snapshot interpolation", () => {
     expect(view.rockCount).toBe(2); // id 2 is gone
     expect(view.shotCount).toBe(0); // shot is gone
   });
+
+  test("interpolates the turret independently of the heading", async ({ page }) => {
+    const ship = await page.evaluate(([first, second]) => {
+      const b = new Interp.SnapshotBuffer({ delayMs: 100 });
+      b.push(first, 1000);
+      b.push(second, 1100);
+      return b.sample(1150).ship; // renderAt = 1050, halfway
+    }, [
+      snapshot({ seq: 1, ship: { x: 0, y: 0, heading: 0, turret: 0, invuln: 0 } }),
+      snapshot({
+        seq: 2,
+        ship: { x: 0, y: 0, heading: 0, turret: Math.PI / 2, invuln: 0 },
+      }),
+    ]);
+    expect(ship.turret).toBeCloseTo(Math.PI / 4, 6);
+    expect(ship.heading).toBeCloseTo(0, 6); // the hull did not turn
+  });
 });
 
 test.describe("the shared arena", () => {
@@ -184,6 +206,45 @@ test.describe("the shared arena", () => {
       return n;
     });
     expect(drawn).toBeGreaterThan(100);
+  });
+
+  test("draws the turret wherever the gunner aims, not where the hull points", async ({ page }) => {
+    await page.goto("/");
+
+    // The hull always faces left (heading π) and only the aim changes. The
+    // barrel is the projectile yellow, which no other element shares, so
+    // counting yellow-ish pixels right of the centre shows where it went.
+    const rightOf = (turret) =>
+      page.evaluate((t) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 200;
+        const renderer = Renderer.create(canvas);
+        renderer.render(
+          {
+            arena: 1000,
+            rocks: [],
+            shots: [],
+            ship: { x: 500, y: 500, heading: Math.PI, turret: t, invuln: 0 },
+          },
+          0,
+        );
+        const { data } = canvas.getContext("2d").getImageData(0, 0, 200, 200);
+        let right = 0;
+        for (let y = 0; y < 200; y++) {
+          for (let x = 101; x < 200; x++) {
+            const i = (y * 200 + x) * 4;
+            // Yellow over any backdrop: green sits clearly above blue,
+            // which the hull's grey and the arena's blue both fail.
+            if (data[i + 1] - data[i + 2] > 15 && data[i + 1] > 60) right++;
+          }
+        }
+        return right;
+      }, turret);
+
+    const aimingRight = await rightOf(0);
+    const aimingLeft = await rightOf(Math.PI);
+    expect(aimingRight).toBeGreaterThan(3);
+    expect(aimingRight).toBeGreaterThan(aimingLeft);
   });
 
   test("each copilot is told their role before the round starts", async ({ page, players }) => {

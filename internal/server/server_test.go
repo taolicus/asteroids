@@ -396,10 +396,53 @@ func TestGunnerSeatUsesTheGunnerShape(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("gunner intent = %d, want 200", res.StatusCode)
 	}
+	// The independent turret is part of the gunner shape.
+	res = postIntent(t, ts, id, gunnerToken, `{"seq":2,"fire":true,"aim":-1.5}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("gunner sending aim = %d, want 200", res.StatusCode)
+	}
+	// A non-numeric aim is still a decode error.
+	res = postIntent(t, ts, id, gunnerToken, `{"seq":3,"fire":true,"aim":"left"}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("gunner sending a text aim = %d, want 400", res.StatusCode)
+	}
 	// The gunner must not be able to send pilot fields.
-	res = postIntent(t, ts, id, gunnerToken, `{"seq":2,"rotate":1}`)
+	res = postIntent(t, ts, id, gunnerToken, `{"seq":4,"rotate":1}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("gunner sending rotate = %d, want 400", res.StatusCode)
+	}
+}
+
+// TestGunnerAimReachesTheSim follows the whole path the aim travels: a
+// gunner's post, decoded by seat, stored by the round, and carried back
+// out on the snapshots every client reads.
+func TestGunnerAimReachesTheSim(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	sim := ts.sessions.Start(id)
+	gunnerToken := tokenFor(t, sim, game.RoleGunner, ownerToken, guestToken)
+
+	ch, cancel := sim.Subscribe()
+	defer cancel()
+	waitForPlaySim(t, ch)
+
+	const aim = 1.25 // radians, a quarter turn off any default
+	deadline := time.After(2 * time.Second)
+	for seq := uint64(1); ; seq++ {
+		res := postIntent(t, ts, id, gunnerToken,
+			fmt.Sprintf(`{"seq":%d,"aim":%v}`, seq, aim))
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("gunner intent = %d, want 200", res.StatusCode)
+		}
+		select {
+		case snap := <-ch:
+			if snap.Turret == aim {
+				return // the posted aim reached the round's state
+			}
+		case <-deadline:
+			t.Fatal("the gunner's aim never reached the simulation")
+		}
 	}
 }
 
@@ -429,6 +472,7 @@ func TestIntentRejections(t *testing.T) {
 		{"wrong type", id, pilotToken, `{"seq":"one","thrust":true}`, http.StatusBadRequest},
 		{"rotate out of range", id, pilotToken, `{"seq":1,"rotate":2}`, http.StatusBadRequest},
 		{"other role's field", id, pilotToken, `{"seq":1,"fire":true}`, http.StatusBadRequest},
+		{"gunner field on the pilot", id, pilotToken, `{"seq":1,"aim":1}`, http.StatusBadRequest},
 		{"lobby not ready", loneID, loneOwner, `{"seq":1,"thrust":true}`, http.StatusConflict},
 		{"oversized body", id, pilotToken, `{"seq":1,"thrust":true,"pad":"` + strings.Repeat("x", 600) + `"}`, http.StatusRequestEntityTooLarge},
 	}

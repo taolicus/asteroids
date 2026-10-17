@@ -112,6 +112,52 @@ func TestShotSplitsRockAndScores(t *testing.T) {
 	}
 }
 
+// The gunner's turret is independent of the ship: the posted aim decides
+// the shot direction, an absent aim follows the nose, and an aim beyond a
+// full turn is folded rather than rejected.
+func TestTurretAimIsIndependentOfTheHeading(t *testing.T) {
+	w := testWorld(t, 7)
+	w.invulnUntil = 1000
+
+	quarter := math.Pi / 2
+	w.step(1, Intent{}, Intent{Seq: 1, Fire: true, Aim: &quarter}, dt)
+
+	if len(w.shots) != 1 {
+		t.Fatalf("shots = %d, want 1", len(w.shots))
+	}
+	if got := w.shots[0].Vel; math.Abs(got.X) > 1e-9 || !approx(got.Y, WeaponTuning.Speed) {
+		t.Fatalf("aim velocity = %v, want (0, %v)", got, WeaponTuning.Speed)
+	}
+	if snap := w.snapshot(1, 1); !approx(snap.Turret, quarter) {
+		t.Fatalf("snapshot turret = %v, want %v", snap.Turret, quarter)
+	}
+
+	// Without an aim the turret follows the nose, which is what a stale
+	// intent leaves behind.
+	w.shots, w.fireReadyAt = nil, 0
+	w.ship.Heading = math.Pi
+	w.step(2, Intent{}, Intent{Seq: 2, Fire: true}, dt)
+
+	if len(w.shots) != 1 {
+		t.Fatalf("shots = %d, want 1", len(w.shots))
+	}
+	if got := w.shots[0].Vel; !approx(got.X, -WeaponTuning.Speed) || math.Abs(got.Y) > 1e-9 {
+		t.Fatalf("nose velocity = %v, want (-%v, 0)", got, WeaponTuning.Speed)
+	}
+	if snap := w.snapshot(2, 2); !approx(snap.Turret, snap.Ship.Heading) {
+		t.Fatalf("snapshot turret = %v, want the heading %v", snap.Turret, snap.Ship.Heading)
+	}
+
+	// An aim past a half turn folds into [-π, π) instead of drifting.
+	w.shots, w.fireReadyAt = nil, 0
+	wrapped := 3 * math.Pi / 2
+	w.step(3, Intent{}, Intent{Seq: 3, Aim: &wrapped}, dt)
+
+	if snap := w.snapshot(3, 3); !approx(snap.Turret, -math.Pi/2) {
+		t.Fatalf("folded turret = %v, want %v", snap.Turret, -math.Pi/2)
+	}
+}
+
 func TestSmallRockIsTerminalAndScoresFull(t *testing.T) {
 	w := testWorld(t, 7)
 	w.invulnUntil = 1000

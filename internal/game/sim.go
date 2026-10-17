@@ -38,8 +38,11 @@ type Snapshot struct {
 	Phase Phase
 	// Pilot is the player holding the pilot's controls this round; the
 	// other player is the gunner.
-	Pilot       Player
-	Ship        Ship
+	Pilot Player
+	Ship  Ship
+	// Turret is the gunner's aim in radians, the direction the next shot
+	// leaves along. It follows the ship's nose when no aim is posted.
+	Turret      float64
 	Lives       int
 	Score       int
 	Survival    float64 // seconds survived this round

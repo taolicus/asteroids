@@ -50,23 +50,26 @@
 
   // interpShip pairs the shared ship across the two bracketing snapshots.
   // A jump larger than snapDistance (a respawn) snaps to the newer one.
+  // The turret is interpolated separately from the hull: it is the
+  // gunner's own aim and does not follow the heading.
   function interpShip(older, newer, t, size, snapDistance) {
     const base = newer || older;
     if (!base || !base.ship) return null;
     const s = base.ship;
     if (!newer || !older || !older.ship) {
-      return { x: s.x, y: s.y, heading: s.heading, invuln: s.invuln };
+      return { x: s.x, y: s.y, heading: s.heading, turret: s.turret, invuln: s.invuln };
     }
     const o = older.ship;
     const dx = wrappedDelta(s.x, o.x, size);
     const dy = wrappedDelta(s.y, o.y, size);
     if (Math.hypot(dx, dy) > snapDistance) {
-      return { x: s.x, y: s.y, heading: s.heading, invuln: s.invuln };
+      return { x: s.x, y: s.y, heading: s.heading, turret: s.turret, invuln: s.invuln };
     }
     return {
       x: lerpWrapped(o.x, s.x, t, size),
       y: lerpWrapped(o.y, s.y, t, size),
       heading: lerpAngle(o.heading, s.heading, t),
+      turret: lerpAngle(o.turret, s.turret, t),
       invuln: s.invuln,
     };
   }

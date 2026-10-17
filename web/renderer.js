@@ -16,6 +16,9 @@
   const SHIP_NOSE = 20;
   const SHIP_TAIL = 13;
   const SHIP_HALF_WIDTH = 9;
+  // The barrel reaches past the hull so the aim reads even when the
+  // gunner points back over the ship.
+  const TURRET_LENGTH = 26;
 
   const COLORS = {
     background: "#0d1017",
@@ -23,6 +26,7 @@
     rock: "#8fa1c7",
     shot: "#ffd479",
     ship: "#e6e6e6",
+    turret: "#ffd479",
   };
 
   function create(canvas) {
@@ -96,6 +100,22 @@
           ctx.lineTo(-SHIP_TAIL * scale, SHIP_HALF_WIDTH * scale);
           ctx.closePath();
           ctx.fill();
+          ctx.restore();
+        });
+        // The gunner's turret, drawn from the centre so it reads
+        // whichever way it points. A view without one falls back to the
+        // nose, the sim's own default.
+        const turret = typeof ship.turret === "number" ? ship.turret : ship.heading;
+        ctx.strokeStyle = COLORS.turret;
+        ctx.lineWidth = line;
+        eachWrapped(ship.x, ship.y, size, TURRET_LENGTH + line, (x, y) => {
+          ctx.save();
+          ctx.translate(x * scale, y * scale);
+          ctx.rotate(turret);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(TURRET_LENGTH * scale, 0);
+          ctx.stroke();
           ctx.restore();
         });
         ctx.globalAlpha = 1;
