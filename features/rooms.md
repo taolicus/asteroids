@@ -89,4 +89,5 @@ screen. The client polls status every 2s — a stand-in until
 `implement-sse-snapshot-stream.md` provides a live channel — and
 re-enters when an instance has been reclaimed (404) or a guest seat was
 lost (401). Full (409) and malformed-link (404) cases render readable
-states, never a broken screen.
+states, never a broken screen. The UI is covered by browser tests
+(`features/testing.md`).

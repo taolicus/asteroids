@@ -1,0 +1,6 @@
+# Playwright browser tests (browser/)
+browser/node_modules/
+browser/playwright-report/
+browser/test-results/
+browser/blob-report/
+browser/playwright/.cache/

@@ -1,0 +1,13 @@
+{
+  "name": "asteroids-browser-tests",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Playwright browser tests for the frontend served by the Go binary.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
