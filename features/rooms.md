@@ -87,8 +87,11 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
 
 `web/app.js` is the lobby. `/` shows the player's own lobby (identity
 created on first visit) with the permanent link and a share affordance:
-the Web Share API when available, otherwise copy-to-clipboard.
-`/?r=<id>` enters that lobby: the owner credential claims the owner
+the Web Share API when available, otherwise copy-to-clipboard. Both seats
+see the same panel — the link and its hint — because nothing in it needs to
+say who created the room or who is waiting: the link works for anyone, and
+the stream is what says the round is starting. `/?r=<id>` enters that
+lobby: the owner credential claims the owner
 seat, everyone else joins as guest (a stored per-instance guest token
 reconnects to the same seat). There is no create button and no home
 screen. The client polls status every 2s while the lobby is waiting for

@@ -40,6 +40,11 @@ cases without a second player; only the end-to-end cases need the guest.
 The round screens end with a game-over case that serves the owner page
 canned snapshots (see below).
 
+The lobby spec (`browser/tests/lobby.spec.js`) covers the room panel: the
+identity and its share link survive a reload, a guest entering the link gets
+the same room and the same link, a third player is told the room is full, a
+malformed link shows the error screen, and copy reaches the clipboard.
+
 The controls spec (`browser/tests/controls.spec.js`) has three halves. The
 arithmetic cases run `page.evaluate` against the page's own `Controls`
 module: both sticks (the dead zone, the steer and aim from a drag direction,

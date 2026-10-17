@@ -4,11 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Two Idiots, One Ship</title>
+  <!-- The tab icon is a rocket emoji drawn into a tiny SVG, which is all a
+       data URI has to be: no image file to serve or cache. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%80%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <h1>Two Idiots, One Ship</h1>
+    <h1><span id="rocket" aria-hidden="true">🚀</span>Two Idiots, One Ship</h1>
     <div id="stage">
       <canvas id="arena" hidden></canvas>
     </div>
@@ -33,10 +36,8 @@
     </section>
 
     <section id="lobby" hidden>
-      <p id="seat"></p>
-      <p id="state"></p>
-      <div id="share" class="share" hidden>
-        <p class="hint">Send this link to your copilot:</p>
+      <div id="share" class="share">
+        <p class="hint">Share your link with a friend:</p>
         <input id="share-link" readonly>
         <div class="actions">
           <button id="share-button" hidden>Share link</button>

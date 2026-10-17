@@ -64,8 +64,9 @@ time the stream connects, which resets the `seq` watermark.
 
 ## Round screens
 
-The lobby panel stays visible while playing; the arena and HUD are
-unhidden when the round starts and hidden again on exit.
+The lobby panel is the room link and is hidden while a round plays, so a
+phone spends that height on the arena; the arena and HUD are unhidden when
+the round starts and hidden again on exit.
 
 Roles are rolled per round, so each player is told theirs rather than
 assuming one: `app.js` compares the stream's `pilot` with the session's

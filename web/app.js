@@ -445,29 +445,12 @@ function handleFrame(frame, g) {
 
 // --- rendering ---
 
+// render shows the room panel, which is just the share link: both seats
+// see the same thing, and nothing in it says who owns what or who is here.
+// The shared stream, not this panel, is what says the round is starting.
 function render(data) {
   show("lobby");
-  const owner = data.seat === "owner";
-  $("seat").textContent = owner
-    ? "You own this lobby."
-    : "You're the guest in this lobby.";
-  $("state").textContent = owner ? ownerState(data) : guestState(data);
-  $("share").hidden = !owner;
-  if (owner) {
-    $("share-link").value = `${location.origin}${data.path}`;
-  }
-}
-
-function ownerState(data) {
-  return data.guest
-    ? "Your copilot is here."
-    : "Waiting for your copilot to open the link.";
-}
-
-function guestState(data) {
-  return data.owner
-    ? "The owner is here."
-    : "You're waiting for the owner to show up.";
+  $("share-link").value = `${location.origin}${data.path}`;
 }
 
 function show(view) {
@@ -502,7 +485,6 @@ $("share-button").addEventListener("click", async () => {
   try {
     await navigator.share({
       title: "Two Idiots, One Ship",
-      text: "Be my copilot:",
       url: shareLink(),
     });
   } catch {
@@ -523,9 +505,9 @@ $("retry").addEventListener("click", () => location.reload());
 
 // --- round flow ---
 
-// play-again asks the server for a fresh round. A 409 means the copilot
-// already restarted (or play is still under way); the stream shows the
-// round that actually exists either way.
+// play-again asks the server for a fresh round. A 409 means the other
+// player already restarted (or play is still under way); the stream shows
+// the round that actually exists either way.
 $("play-again").addEventListener("click", async () => {
   if (!game) return;
   try {

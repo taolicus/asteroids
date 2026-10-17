@@ -33,6 +33,15 @@ h1 {
   letter-spacing: 0.05em;
 }
 
+/* The rocket rides on top of the title. It lives inside the h1 so the
+   playing rule that hides the heading takes it with it. */
+#rocket {
+  display: block;
+  font-size: 4rem;
+  line-height: 1;
+  text-align: center;
+}
+
 #arena {
   width: 100%;
   max-width: 640px;
@@ -205,10 +214,6 @@ button:active {
   color: #aeb4c2;
   font-size: 0.9rem;
   text-align: center;
-}
-
-#seat {
-  font-size: 1.05rem;
 }
 
 .actions {

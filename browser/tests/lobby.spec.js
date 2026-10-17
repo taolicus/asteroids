@@ -3,14 +3,20 @@
 // The `players` fixture and `shareLink` helper are shared with the
 // renderer tests; see fixtures.js for how a "second browser" is a second
 // isolated context.
+//
+// The panel itself is only the share link, so what the owner and the guest
+// can be told apart by here is the link they carry, not any copy: the
+// transition into a round is covered by the renderer and controls specs.
 import { test, expect, shareLink } from "./fixtures.js";
 
 test("index page is the owner's lobby, not a create screen", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator("#lobby")).toBeVisible();
-  await expect(page.locator("#seat")).toHaveText("You own this lobby.");
-  await expect(page.locator("#state")).toHaveText("Waiting for your copilot to open the link.");
+  await expect(page.locator("#share .hint")).toHaveText("Share your link with a friend:");
+  // The panel carries no ownership or waiting copy to drift out of date.
+  await expect(page.locator("#seat")).toHaveCount(0);
+  await expect(page.locator("#state")).toHaveCount(0);
   await expect(page.locator("#error")).toBeHidden();
   await shareLink(page);
 
@@ -23,33 +29,32 @@ test("the identity and its link survive a reload", async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.locator("#seat")).toHaveText("You own this lobby.");
+  await expect(page.locator("#share")).toBeVisible();
   expect(await shareLink(page)).toBe(before);
 });
 
-test("a guest opening the link joins as guest and both see ready", async ({ page, players }) => {
+test("a guest entering the link gets the same room and the same link", async ({ page, players }) => {
   await page.goto("/");
   const link = await shareLink(page);
 
   const guest = await players();
   await guest.page.goto(link);
 
-  await expect(guest.page.locator("#seat")).toHaveText("You're the guest in this lobby.");
-  await expect(guest.page.locator("#state")).toHaveText("The owner is here.");
-  // The share affordance belongs to the owner alone.
-  await expect(guest.page.locator("#share")).toBeHidden();
-
-  // The owner's next poll sees the guest.
-  await expect(page.locator("#state")).toHaveText("Your copilot is here.");
+  await expect(guest.page.locator("#share .hint")).toHaveText("Share your link with a friend:");
+  // The guest may already be playing, so read the panel's contents rather
+  // than asserting the panel is on screen.
+  await expect(guest.page.locator("#share-link")).toHaveValue(link);
 });
 
-test("a third player sees the lobby as full", async ({ page, players }) => {
+test("a third player is told the room is full", async ({ page, players }) => {
   await page.goto("/");
   const link = await shareLink(page);
 
   const guest = await players();
   await guest.page.goto(link);
-  await expect(guest.page.locator("#seat")).toHaveText("You're the guest in this lobby.");
+  // The room is ready once the guest is in, so its role appearing is the
+  // guest having filled the seat.
+  await expect(guest.page.locator("#hud-role")).toHaveText(/^(Pilot|Gunner)$/);
 
   const third = await players();
   await third.page.goto(link);
