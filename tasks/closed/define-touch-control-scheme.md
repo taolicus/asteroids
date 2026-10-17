@@ -6,9 +6,10 @@ area: client
 
 Settled for `implement-touch-controls-and-responsive-layout.md`; resolves
 the questions in `define-touch-control-scheme`. The wire contract stays
-`define-input-intent-contract.md`; adopting turret aim adds one optional
-field to the gunner payload, which `implement-turret-aim.md` implements and
-records in that document.
+`define-input-intent-contract.md`; adopting turret aim added one optional
+field to the gunner payload, implemented in
+`tasks/closed/implement-turret-aim.md` and recorded in that document
+together with the fire direction.
 
 Each player holds one role for a round and is on their own device, so a
 screen only ever shows its own role's controls. The client already knows
