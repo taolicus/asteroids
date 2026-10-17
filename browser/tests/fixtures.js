@@ -5,6 +5,8 @@
 // same server.
 import { test as base, expect } from "@playwright/test";
 
+export { expect };
+
 // Share links are permanent: /?r=<12-char lobby ID>.
 export const LOBBY_LINK = /\/\?r=[A-Za-z0-9_-]{12}$/;
 
