@@ -8,9 +8,10 @@ dependencies:
 
 # Implement room create/join
 
-Note: `player-owned-lobby-rooms.md` proposes player-owned lobby rooms
-that supersede parts of this task (the index lobby, identity, and share
-affordances). Revise the criteria below when that issue is settled.
+Note: `player-owned-lobby-rooms.md` (settled) supersedes the index-page
+and identity parts of this task; see "Closed as superseded" below. The
+room API, token reconnect, presence, and sweep logic carry forward into
+`implement-player-lobby.md`.
 
 Two-player rooms with role assignment, per the settled decisions in
 `resolve-room-lifecycle.md`:
@@ -57,3 +58,14 @@ page). CI runs the same suite with `-race`.
 Outstanding: the two-browser check cannot run on this device (no
 browser installed). It stays open until someone opens a created link
 in a second browser and confirms both role/waiting states.
+
+## Closed as superseded
+
+`player-owned-lobby-rooms.md` (settled) replaces the index-page and
+identity model this task delivered: rooms become player-owned lobbies
+with a permanent link, identity-based seats, and no create button. The
+outstanding two-browser check is therefore obsolete — it would exercise
+a UI that no longer exists — and is covered instead by
+`implement-player-lobby.md`'s verification. The room API, token
+reconnect, presence, and sweep logic implemented here carry forward and
+are extended there.

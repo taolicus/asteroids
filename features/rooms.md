@@ -4,6 +4,12 @@
 `internal/server` exposes the HTTP API the frontend uses. Decisions are
 recorded in `tasks/closed/resolve-room-lifecycle.md`.
 
+> This describes the implemented create/join model. It is being replaced
+> by player-owned lobbies with a permanent link, identity-based seats,
+> and ephemeral room instances — see
+> `tasks/closed/player-owned-lobby-rooms.md` and
+> `implement-player-lobby.md`.
+
 ## API
 
 - `POST /api/rooms` → 201 `{id, link}`. The link is relative
