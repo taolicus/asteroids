@@ -40,3 +40,41 @@ Turn rooms into player-owned lobbies per the settled decisions in
 - The index page shows a lobby with a share affordance and no create
   button; opening someone else's link joins as guest.
 - Manual two-browser check on a device with browsers (this one has none).
+
+## Outcome
+
+Implemented:
+
+- `internal/identity`: HMAC-signed owner credentials (`<lobbyId>.<sig>`)
+  keyed by `LOBBY_KEY`, self-verifying and stateless; `ValidID` guards
+  the link shape.
+- `internal/rooms`: lobby instances keyed by permanent lobby ID,
+  created lazily, reclaimed after the idle grace (age cap removed),
+  identity-based owner/guest seats, presence-based guest seat with
+  per-instance reconnect tokens, `waiting`/`ready` from presence.
+- `internal/server`: `POST /api/identities`, `POST /api/lobby/{id}`
+  (enter/re-enter), `GET /api/lobby/{id}` (poll); 404/401/409 states.
+- `web/`: `/` is the player's own lobby with a permanent link and a
+  share affordance (Web Share API, copy fallback); `/?r=<id>` joins a
+  lobby as guest; no create button or home screen. Polls every 2s and
+  re-enters after reclaim (404) or a lost guest seat (401).
+- `cmd/server`: reads `LOBBY_KEY`, warns and uses a random key when it
+  is unset. `features/rooms.md` and `features/deployment.md` document
+  the model and the host key setup.
+
+Verified: `gofmt`, `go vet`, and `go test ./...` pass (identity signing
+and tampering, wrong key, seat assignment in either arrival order,
+invalid identity as guest, reclaim-and-recreate under the same ID, no
+age cap, second guest full, credential surviving a restart with the
+same key and failing with a different key), plus an end-to-end curl
+smoke test against the running binary (identity → owner → guest →
+ready, 409/401/404, owner-absent guest waiting, index served). CI runs
+the suite with `-race`.
+
+Outstanding:
+
+- The two-browser check cannot run on this device (no browser). It
+  stays open until the lobby is opened in two browsers.
+- `LOBBY_KEY` is documented but not yet set on the host. Set it (see
+  `features/deployment.md`) before deploying the lobby build.
+

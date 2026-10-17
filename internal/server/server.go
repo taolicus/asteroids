@@ -1,70 +1,65 @@
-// Package server exposes the room HTTP API used by the frontend.
+// Package server exposes the lobby HTTP API used by the frontend.
 package server
 
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
+	"github.com/taolicus/asteroids/internal/identity"
 	"github.com/taolicus/asteroids/internal/rooms"
 )
 
-// playerTokenHeader carries the per-player token issued on join.
+// playerTokenHeader carries either the owner credential (from the
+// identity endpoint) or a guest's per-instance reconnect token.
 const playerTokenHeader = "X-Player-Token"
 
-type createResponse struct {
-	ID   string `json:"id"`
-	Link string `json:"link"`
+type identityResponse struct {
+	LobbyID string `json:"lobbyId"`
+	Token   string `json:"token"`
 }
 
-type joinRequest struct {
+type lobbyResponse struct {
+	Seat  rooms.Seat `json:"seat"`
+	State string     `json:"state"`
+	Owner bool       `json:"owner"`
+	Guest bool       `json:"guest"`
+	// Path is the lobby's relative share link.
+	Path string `json:"path"`
+	// Token is a freshly issued guest reconnect token, omitted for the
+	// owner (whose credential never changes).
 	Token string `json:"token,omitempty"`
-}
-
-type joinResponse struct {
-	Role  rooms.Role `json:"role"`
-	Token string     `json:"token"`
-}
-
-type statusResponse struct {
-	Role   rooms.Role `json:"role"`
-	State  string     `json:"state"`
-	Pilot  bool       `json:"pilot"`
-	Gunner bool       `json:"gunner"`
 }
 
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// Handler returns the API routes for m. The caller mounts it under
-// "/api/" alongside the static frontend; paths here are full request
-// paths because ServeMux does not strip the mount point.
-func Handler(m *rooms.Manager) http.Handler {
+// Handler returns the API routes. The caller mounts it under "/api/"
+// alongside the static frontend; paths here are full request paths
+// because ServeMux does not strip the mount point.
+func Handler(m *rooms.Manager, iss *identity.Issuer) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/rooms", func(w http.ResponseWriter, r *http.Request) {
-		id, err := m.Create()
+
+	mux.HandleFunc("POST /api/identities", func(w http.ResponseWriter, r *http.Request) {
+		id, err := iss.Issue()
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, createResponse{
-			ID:   id,
-			Link: "/?r=" + id,
-		})
+		writeJSON(w, http.StatusCreated, identityResponse{LobbyID: id.LobbyID, Token: id.Token})
 	})
-	mux.HandleFunc("POST /api/rooms/{id}/join", func(w http.ResponseWriter, r *http.Request) {
-		var req joinRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			httpError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
+
+	mux.HandleFunc("POST /api/lobby/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !identity.ValidID(id) {
+			httpError(w, http.StatusNotFound, rooms.ErrNotFound)
 			return
 		}
-		role, token, err := m.Join(r.PathValue("id"), req.Token)
+		asOwner := isOwner(iss, id, r.Header.Get(playerTokenHeader))
+		st, token, err := m.Enter(id, asOwner)
 		if err != nil {
 			switch {
-			case errors.Is(err, rooms.ErrNotFound):
-				httpError(w, http.StatusNotFound, err)
 			case errors.Is(err, rooms.ErrFull):
 				httpError(w, http.StatusConflict, err)
 			default:
@@ -72,10 +67,22 @@ func Handler(m *rooms.Manager) http.Handler {
 			}
 			return
 		}
-		writeJSON(w, http.StatusOK, joinResponse{Role: role, Token: token})
+		writeJSON(w, http.StatusOK, lobbyPayload(id, st, token))
 	})
-	mux.HandleFunc("GET /api/rooms/{id}", func(w http.ResponseWriter, r *http.Request) {
-		role, state, pilot, gunner, err := m.Status(r.PathValue("id"), r.Header.Get(playerTokenHeader))
+
+	mux.HandleFunc("GET /api/lobby/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !identity.ValidID(id) {
+			httpError(w, http.StatusNotFound, rooms.ErrNotFound)
+			return
+		}
+		token := r.Header.Get(playerTokenHeader)
+		asOwner := isOwner(iss, id, token)
+		if token == "" {
+			httpError(w, http.StatusUnauthorized, rooms.ErrUnauthorized)
+			return
+		}
+		st, err := m.Status(id, token, asOwner)
 		if err != nil {
 			switch {
 			case errors.Is(err, rooms.ErrNotFound):
@@ -87,14 +94,30 @@ func Handler(m *rooms.Manager) http.Handler {
 			}
 			return
 		}
-		writeJSON(w, http.StatusOK, statusResponse{
-			Role:   role,
-			State:  state,
-			Pilot:  pilot,
-			Gunner: gunner,
-		})
+		writeJSON(w, http.StatusOK, lobbyPayload(id, st, ""))
 	})
+
 	return mux
+}
+
+// isOwner reports whether token is a valid owner credential for id.
+func isOwner(iss *identity.Issuer, id, token string) bool {
+	if token == "" {
+		return false
+	}
+	owner, err := iss.Verify(token)
+	return err == nil && owner == id
+}
+
+func lobbyPayload(id string, st rooms.Status, token string) lobbyResponse {
+	return lobbyResponse{
+		Seat:  st.Seat,
+		State: st.State,
+		Owner: st.OwnerPresent,
+		Guest: st.GuestPresent,
+		Path:  "/?r=" + id,
+		Token: token,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

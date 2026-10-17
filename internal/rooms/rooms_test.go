@@ -19,193 +19,203 @@ func newTestManager() (*Manager, *fakeClock) {
 	return m, clock
 }
 
-func TestCreateReturnsUnguessableID(t *testing.T) {
-	m, _ := newTestManager()
-	seen := map[string]bool{}
-	for i := 0; i < 50; i++ {
-		id, err := m.Create()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(id) != 12 {
-			t.Fatalf("id %q is %d chars, want 12", id, len(id))
-		}
-		for _, r := range id {
-			ok := r == '-' || r == '_' ||
-				(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
-			if !ok {
-				t.Fatalf("id %q contains non-base64url char %q", id, r)
-			}
-		}
-		if seen[id] {
-			t.Fatalf("duplicate id %q", id)
-		}
-		seen[id] = true
-	}
-}
+const testLobby = "abcdefghijkl"
 
-func TestJoinAssignsPilotThenGunner(t *testing.T) {
+func TestEnterCreatesInstanceLazily(t *testing.T) {
 	m, _ := newTestManager()
-	id, err := m.Create()
+
+	st, token, err := m.Enter(testLobby, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	role, _, err := m.Join(id, "")
-	if err != nil || role != RolePilot {
-		t.Fatalf("first join = %q, %v; want pilot, nil", role, err)
+	if st.Seat != SeatOwner || st.State != "waiting" || !st.OwnerPresent || st.GuestPresent {
+		t.Fatalf("owner enter = %+v", st)
 	}
-	role, _, err = m.Join(id, "")
-	if err != nil || role != RoleGunner {
-		t.Fatalf("second join = %q, %v; want gunner, nil", role, err)
+	if token != "" {
+		t.Fatalf("owner token = %q, want empty (the credential identifies them)", token)
 	}
-	if _, _, err = m.Join(id, ""); !errors.Is(err, ErrFull) {
-		t.Fatalf("third join err = %v, want ErrFull", err)
-	}
-	if _, _, err = m.Join("nope", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unknown room err = %v, want ErrNotFound", err)
+	if m.Len() != 1 {
+		t.Fatalf("instances = %d, want 1", m.Len())
 	}
 }
 
-func TestTokenReattachesFullRoom(t *testing.T) {
+func TestSeatsFollowArrivalOrderIndependently(t *testing.T) {
 	m, _ := newTestManager()
-	id, _ := m.Create()
-	_, pilotToken, err := m.Join(id, "")
+
+	// Guest first: the owner seat stays reserved for the owner.
+	gst, guestToken, err := m.Enter(testLobby, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Join(id, "")
+	if gst.Seat != SeatGuest || gst.State != "waiting" || gst.OwnerPresent {
+		t.Fatalf("guest-only enter = %+v", gst)
+	}
+	if guestToken == "" {
+		t.Fatal("guest got no reconnect token")
+	}
 
-	role, token, err := m.Join(id, pilotToken)
+	// Owner arrives later and takes the owner seat, not the guest seat.
+	ost, _, err := m.Enter(testLobby, true)
 	if err != nil {
-		t.Fatalf("token rejoin: %v", err)
+		t.Fatal(err)
 	}
-	if role != RolePilot || token != pilotToken {
-		t.Fatalf("reattach = %q/%q, want pilot/own token", role, token)
+	if ost.Seat != SeatOwner || ost.State != "ready" || !ost.OwnerPresent || !ost.GuestPresent {
+		t.Fatalf("owner-later enter = %+v", ost)
 	}
-	if _, _, err := m.Join(id, "wrong-token"); !errors.Is(err, ErrFull) {
-		t.Fatalf("unknown token in full room err = %v, want ErrFull", err)
+
+	// The guest polls with their token and sees the shared state.
+	gst2, err := m.Status(testLobby, guestToken, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gst2.Seat != SeatGuest || gst2.State != "ready" {
+		t.Fatalf("guest status = %+v", gst2)
 	}
 }
 
-func TestStatusPresence(t *testing.T) {
+func TestSecondGuestSeesFull(t *testing.T) {
+	m, _ := newTestManager()
+	if _, _, err := m.Enter(testLobby, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Enter(testLobby, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Enter(testLobby, false); !errors.Is(err, ErrFull) {
+		t.Fatalf("second guest err = %v, want ErrFull", err)
+	}
+}
+
+func TestOwnerIsNotDisplacedByGuest(t *testing.T) {
+	m, _ := newTestManager()
+
+	// A guest arrives first; the owner seat stays reserved for the owner.
+	if st, _, err := m.Enter(testLobby, false); err != nil || st.Seat != SeatGuest {
+		t.Fatalf("first guest = %+v, %v", st, err)
+	}
+	if st, _, err := m.Enter(testLobby, true); err != nil || st.Seat != SeatOwner {
+		t.Fatalf("owner seat = %+v, %v; want owner", st, err)
+	}
+	// A guest arriving a second time while still present is still just a
+	// full lobby, never the owner seat.
+	if st, _, err := m.Enter(testLobby, false); !errors.Is(err, ErrFull) {
+		t.Fatalf("repeat guest = %+v, %v; want ErrFull", st, err)
+	}
+}
+
+func TestGuestSeatFreesWhenHolderGoesAbsent(t *testing.T) {
 	m, clock := newTestManager()
-	id, _ := m.Create()
-	_, pilotToken, _ := m.Join(id, "")
-	m.Join(id, "")
+	m.Enter(testLobby, true)
+	_, oldToken, _ := m.Enter(testLobby, false)
 
-	role, state, pilot, gunner, err := m.Status(id, pilotToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if role != RolePilot || state != "ready" || !pilot || !gunner {
-		t.Fatalf("status = %q %q %v %v", role, state, pilot, gunner)
-	}
-
-	// Gunner goes silent past the presence TTL; the pilot's poll still
-	// works and reports the gunner as gone.
 	clock.advance(PresenceTTL + time.Second)
-	_, state, pilot, gunner, err = m.Status(id, pilotToken)
+
+	// The absent guest no longer holds the seat, so a new guest replaces
+	// them and the old token stops working.
+	_, newToken, err := m.Enter(testLobby, false)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new guest after absence: %v", err)
 	}
-	if state != "ready" {
-		t.Fatalf("state = %q after silent gunner; seats stay filled", state)
+	if newToken == oldToken {
+		t.Fatal("new guest reused the absent guest's token")
 	}
-	if !pilot || gunner {
-		t.Fatalf("presence pilot=%v gunner=%v; want true,false", pilot, gunner)
+	if _, err := m.Status(testLobby, oldToken, false); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale guest token err = %v, want ErrUnauthorized", err)
 	}
 }
 
-func TestStatusRejectsBadTokens(t *testing.T) {
-	m, _ := newTestManager()
-	id, _ := m.Create()
-	_, token, _ := m.Join(id, "")
+func TestGuestReconnectWithinPresenceTTL(t *testing.T) {
+	m, clock := newTestManager()
+	_, token, _ := m.Enter(testLobby, false)
 
-	if _, _, _, _, err := m.Status(id, ""); !errors.Is(err, ErrUnauthorized) {
+	clock.advance(PresenceTTL - time.Second)
+	st, err := m.Status(testLobby, token, false)
+	if err != nil {
+		t.Fatalf("guest reconnect: %v", err)
+	}
+	if st.Seat != SeatGuest || !st.GuestPresent {
+		t.Fatalf("guest status = %+v", st)
+	}
+}
+
+func TestStatusAuthentication(t *testing.T) {
+	m, _ := newTestManager()
+	m.Enter(testLobby, true)
+	_, guestToken, _ := m.Enter(testLobby, false)
+
+	if _, err := m.Status("missinglobby", guestToken, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown lobby err = %v, want ErrNotFound", err)
+	}
+	if _, err := m.Status(testLobby, "", false); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("empty token err = %v, want ErrUnauthorized", err)
 	}
-	if _, _, _, _, err := m.Status(id, "wrong"); !errors.Is(err, ErrUnauthorized) {
+	if _, err := m.Status(testLobby, "wrong-token", false); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("wrong token err = %v, want ErrUnauthorized", err)
 	}
-	if _, _, _, _, err := m.Status("nope", token); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unknown room err = %v, want ErrNotFound", err)
+	if st, err := m.Status(testLobby, "", true); err != nil || st.Seat != SeatOwner {
+		t.Fatalf("owner status = %+v, %v", st, err)
 	}
 }
 
-func TestEmptyRoomExpiresAfterGrace(t *testing.T) {
+func TestReclaimAndRecreateUnderSameID(t *testing.T) {
 	m, clock := newTestManager()
-	m.Create()
+	m.Enter(testLobby, true)
 
-	clock.advance(EmptyGrace - time.Second)
+	// Nobody present long enough to start the grace, then to elapse it.
+	clock.advance(PresenceTTL + time.Second)
 	m.Sweep()
 	if m.Len() != 1 {
-		t.Fatalf("rooms = %d after %v, want 1", m.Len(), EmptyGrace-time.Second)
+		t.Fatal("reclaimed while grace only started")
 	}
-	clock.advance(2 * time.Second)
+	clock.advance(IdleGrace + time.Second)
 	m.Sweep()
 	if m.Len() != 0 {
-		t.Fatalf("rooms = %d after %v, want 0", m.Len(), EmptyGrace+time.Second)
+		t.Fatalf("instances = %d after grace, want 0", m.Len())
+	}
+
+	// The link is unchanged: the same ID recreates the instance, and the
+	// owner still gets the owner seat.
+	st, _, err := m.Enter(testLobby, true)
+	if err != nil {
+		t.Fatalf("recreate: %v", err)
+	}
+	if st.Seat != SeatOwner {
+		t.Fatalf("recreated seat = %q, want owner", st.Seat)
 	}
 }
 
-func TestJoinedRoomGraceStartsWhenLastPlayerGoesSilent(t *testing.T) {
+func TestActivityRescuesInstanceDuringGrace(t *testing.T) {
 	m, clock := newTestManager()
-	id, _ := m.Create()
-	m.Join(id, "")
+	m.Enter(testLobby, true)
 
 	clock.advance(PresenceTTL + time.Second)
-	m.Sweep() // observes absence, starts grace
-	if m.Len() != 1 {
-		t.Fatal("room removed when grace only started")
+	m.Sweep() // starts the grace
+	clock.advance(IdleGrace - time.Second)
+	if _, _, err := m.Enter(testLobby, true); err != nil {
+		t.Fatalf("enter during grace: %v", err)
 	}
-	clock.advance(EmptyGrace - time.Second)
+	clock.advance(IdleGrace + time.Second)
 	m.Sweep()
 	if m.Len() != 1 {
-		t.Fatal("room removed before grace elapsed")
-	}
-	clock.advance(2 * time.Second)
-	m.Sweep()
-	if m.Len() != 0 {
-		t.Fatalf("rooms = %d after grace, want 0", m.Len())
+		t.Fatal("rescued instance was reclaimed anyway")
 	}
 }
 
-func TestRejoinDuringGraceRescuesRoom(t *testing.T) {
+func TestNoAgeCapWhilePresent(t *testing.T) {
 	m, clock := newTestManager()
-	id, _ := m.Create()
+	m.Enter(testLobby, true)
 
-	clock.advance(EmptyGrace - time.Second)
-	m.Sweep()
-	_, _, err := m.Join(id, "")
-	if err != nil {
-		t.Fatalf("join during grace: %v", err)
+	// Keep the owner present for well past the old 30-minute cap; the
+	// instance must survive because it is not abandoned.
+	for i := 0; i < 100; i++ {
+		clock.advance(30 * time.Second)
+		if _, err := m.Status(testLobby, "", true); err != nil {
+			t.Fatalf("owner status at step %d: %v", i, err)
+		}
+		m.Sweep()
 	}
-	clock.advance(EmptyGrace + time.Second)
-	m.Sweep()
 	if m.Len() != 1 {
-		t.Fatal("rescued room expired anyway")
-	}
-}
-
-func TestHardCapRemovesBusyRoom(t *testing.T) {
-	m, clock := newTestManager()
-	id, _ := m.Create()
-	_, token, _ := m.Join(id, "")
-
-	// Keep the player present right up to the cap; age wins anyway.
-	clock.advance(MaxAge - time.Second)
-	m.Sweep()
-	if m.Len() != 1 {
-		t.Fatal("room removed before hard cap")
-	}
-	if _, _, _, _, err := m.Status(id, token); err != nil {
-		t.Fatalf("status before cap: %v", err)
-	}
-	clock.advance(2 * time.Second)
-	m.Sweep()
-	if m.Len() != 0 {
-		t.Fatalf("rooms = %d after hard cap, want 0", m.Len())
+		t.Fatalf("instances = %d after 50m of presence, want 1", m.Len())
 	}
 }
 

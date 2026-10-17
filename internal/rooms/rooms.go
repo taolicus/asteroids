@@ -1,90 +1,112 @@
-// Package rooms manages two-player room lifecycle, role assignment,
-// player identity, and expiry. Decisions live in
-// tasks/closed/resolve-room-lifecycle.md.
+// Package rooms manages ephemeral two-player lobby instances and the
+// seats in them.
+//
+// A lobby is identified by a permanent, public lobby ID. The instance
+// behind it is created lazily on first use and reclaimed after an idle
+// window, so memory is bounded by concurrently connected players rather
+// than by how many links have ever been shared. Seats follow identity:
+// the owner seat is reserved for the player holding the owner
+// credential, and everyone else takes the guest seat. Roles are not tied
+// to seats; they are rolled per round elsewhere.
+//
+// Decisions live in tasks/closed/player-owned-lobby-rooms.md.
 package rooms
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"sync"
 	"time"
 )
 
-// Role is a player's seat in a room.
-type Role string
+// Seat is the seat a player holds in a lobby. It is not a role: roles
+// are rolled at each round start (implement-round-flow-and-replay.md).
+type Seat string
 
 const (
-	RolePilot  Role = "pilot"
-	RoleGunner Role = "gunner"
+	SeatOwner Seat = "owner"
+	SeatGuest Seat = "guest"
 )
 
 const (
-	// idBytes is the entropy in room IDs and player tokens; base64url
+	// idBytes is the entropy in per-instance guest tokens; base64url
 	// without padding yields 12-char strings.
 	idBytes = 9
 	// PresenceTTL is how long a player counts as connected without an
 	// authenticated request.
 	PresenceTTL = 15 * time.Second
-	// EmptyGrace is how long a room survives with no connected player.
-	EmptyGrace = 60 * time.Second
-	// MaxAge is the hard room lifetime cap.
-	MaxAge = 30 * time.Minute
-	// sweepInterval is the periodic expiry sweep cadence.
+	// IdleGrace is how long an instance survives with no connected
+	// player before it is reclaimed. Reclaiming never invalidates the
+	// link: the next use recreates the instance under the same ID.
+	IdleGrace = 60 * time.Second
+	// sweepInterval is the periodic reclaim cadence.
 	sweepInterval = time.Second
 )
 
 // Sentinels reported by Manager methods.
 var (
-	ErrNotFound     = errors.New("room not found")
-	ErrFull         = errors.New("room is full")
+	ErrNotFound     = errors.New("lobby not found")
+	ErrFull         = errors.New("lobby is full")
 	ErrUnauthorized = errors.New("unknown player token")
 )
 
 type player struct {
-	role     Role
+	// token is the per-instance reconnect token. The owner's secret
+	// credential identifies them instead, so the owner's is empty.
 	token    string
 	lastSeen time.Time
 }
 
-type room struct {
-	id        string
-	createdAt time.Time
+func (p *player) present(now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	return !p.lastSeen.IsZero() && now.Sub(p.lastSeen) < PresenceTTL
+}
+
+type lobby struct {
+	id string
+	// owner holds the owner seat; its lastSeen is zero until the owner
+	// has ever entered.
+	owner player
+	// guest is nil until someone takes the guest seat, and is replaced
+	// once its holder has been absent past the presence TTL.
+	guest *player
 	// emptySince is set when no player is connected; zero means at
 	// least one player is present.
 	emptySince time.Time
-	players    map[Role]*player
 }
 
-func (p *player) present(now time.Time) bool {
-	return now.Sub(p.lastSeen) < PresenceTTL
+// Status reports the lobby's observable state to one player.
+type Status struct {
+	// Seat is the seat held by the player the status is for.
+	Seat Seat
+	// State is "ready" when both players are present and "waiting"
+	// otherwise. A lobbied guest waits while the owner is elsewhere.
+	State string
+	// OwnerPresent and GuestPresent report current presence per seat.
+	OwnerPresent bool
+	GuestPresent bool
 }
 
-func (r *room) present(now time.Time) bool {
-	for _, p := range r.players {
-		if p.present(now) {
-			return true
-		}
-	}
-	return false
-}
-
-// Manager owns every room. All room state is guarded by one mutex;
-// there is no per-room goroutine. The expiry sweep runs on a single
+// Manager owns every lobby instance. All state is guarded by one mutex;
+// there is no per-lobby goroutine. The reclaim sweep runs on a single
 // server-wide goroutine started by Start.
 type Manager struct {
-	mu    sync.Mutex
-	rooms map[string]*room
-	now   func() time.Time
+	mu      sync.Mutex
+	lobbies map[string]*lobby
+	now     func() time.Time
 }
 
 // NewManager creates an empty manager using the wall clock and
 // crypto/rand.
 func NewManager() *Manager {
 	return &Manager{
-		rooms: make(map[string]*room),
-		now:   time.Now,
+		lobbies: make(map[string]*lobby),
+		now:     time.Now,
 	}
 }
 
@@ -96,136 +118,104 @@ func (m *Manager) newID() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// Create makes an empty room and returns its ID. The empty-grace
-// clock starts at creation: the creator has not joined yet.
-func (m *Manager) Create() (string, error) {
+// Enter creates the instance if needed, assigns the caller a seat, and
+// refreshes their presence. asOwner must have been established by
+// verifying the caller's credential for this lobby. It returns the
+// caller's view of the lobby and, for a guest, a reconnect token.
+func (m *Manager) Enter(id string, asOwner bool) (Status, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var id string
-	for {
-		var err error
-		if id, err = m.newID(); err != nil {
-			return "", err
-		}
-		if _, taken := m.rooms[id]; !taken {
-			break
-		}
-	}
 	now := m.now()
-	m.rooms[id] = &room{
-		id:         id,
-		createdAt:  now,
-		emptySince: now,
-		players:    make(map[Role]*player),
+	l, ok := m.lobbies[id]
+	if !ok {
+		l = &lobby{id: id}
+		m.lobbies[id] = l
 	}
-	return id, nil
+
+	if asOwner {
+		l.owner.lastSeen = now
+		l.emptySince = time.Time{}
+		return l.status(now, SeatOwner), "", nil
+	}
+
+	if l.guest.present(now) {
+		return Status{}, "", ErrFull
+	}
+	token, err := m.newID()
+	if err != nil {
+		return Status{}, "", err
+	}
+	l.guest = &player{token: token, lastSeen: now}
+	l.emptySince = time.Time{}
+	return l.status(now, SeatGuest), token, nil
 }
 
-// Join assigns a seat and issues a player token. A non-empty token
-// that matches a player of the room reattaches that player to their
-// role even when the room is full; an unknown token is ignored and
-// treated as a fresh join. Joining refreshes presence.
-func (m *Manager) Join(id, token string) (Role, string, error) {
+// Status reports the caller's view, refreshing their presence. For the
+// owner, asOwner must already be established; for a guest, token must
+// match the instance's guest token.
+func (m *Manager) Status(id, token string, asOwner bool) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	r, ok := m.rooms[id]
+	l, ok := m.lobbies[id]
 	if !ok {
-		return "", "", ErrNotFound
+		return Status{}, ErrNotFound
 	}
 	now := m.now()
 
-	if token != "" {
-		for _, p := range r.players {
-			if p.token == token {
-				p.lastSeen = now
-				r.emptySince = time.Time{}
-				return p.role, p.token, nil
-			}
-		}
+	if asOwner {
+		l.owner.lastSeen = now
+		l.emptySince = time.Time{}
+		return l.status(now, SeatOwner), nil
 	}
-
-	for _, role := range []Role{RolePilot, RoleGunner} {
-		if _, taken := r.players[role]; !taken {
-			tok, err := m.newID()
-			if err != nil {
-				return "", "", err
-			}
-			r.players[role] = &player{role: role, token: tok, lastSeen: now}
-			r.emptySince = time.Time{}
-			return role, tok, nil
-		}
+	if token == "" || l.guest == nil ||
+		subtle.ConstantTimeCompare([]byte(token), []byte(l.guest.token)) != 1 {
+		return Status{}, ErrUnauthorized
 	}
-	return "", "", ErrFull
+	l.guest.lastSeen = now
+	l.emptySince = time.Time{}
+	return l.status(now, SeatGuest), nil
 }
 
-// Status reports a player's seat and room state, refreshing presence.
-// state is "ready" once both seats are filled (a disconnect does not
-// unfill a seat) and "waiting" otherwise. pilot and gunner report
-// current presence per seat.
-func (m *Manager) Status(id, token string) (role Role, state string, pilot, gunner bool, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (l *lobby) present(now time.Time) bool {
+	return l.owner.present(now) || l.guest.present(now)
+}
 
-	r, ok := m.rooms[id]
-	if !ok {
-		return "", "", false, false, ErrNotFound
-	}
-	if token == "" {
-		return "", "", false, false, ErrUnauthorized
-	}
-	var me *player
-	for _, p := range r.players {
-		if p.token == token {
-			me = p
-			break
-		}
-	}
-	if me == nil {
-		return "", "", false, false, ErrUnauthorized
-	}
-
-	now := m.now()
-	me.lastSeen = now
-	r.emptySince = time.Time{}
-
-	pilot = r.players[RolePilot] != nil && r.players[RolePilot].present(now)
-	gunner = r.players[RoleGunner] != nil && r.players[RoleGunner].present(now)
-	state = "waiting"
-	if r.players[RolePilot] != nil && r.players[RoleGunner] != nil {
+func (l *lobby) status(now time.Time, seat Seat) Status {
+	owner := l.owner.present(now)
+	guest := l.guest.present(now)
+	state := "waiting"
+	if owner && guest {
 		state = "ready"
 	}
-	return me.role, state, pilot, gunner, nil
+	return Status{Seat: seat, State: state, OwnerPresent: owner, GuestPresent: guest}
 }
 
-// Sweep removes expired rooms: past the hard age cap, or with no
-// connected player for longer than the empty grace period.
+// Sweep reclaims instances that have had no connected player for longer
+// than the idle grace. There is no age cap: a lobby a player is
+// legitimately waiting in must not be killed.
 func (m *Manager) Sweep() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	now := m.now()
-	for id, r := range m.rooms {
-		if now.Sub(r.createdAt) >= MaxAge {
-			delete(m.rooms, id)
+	for id, l := range m.lobbies {
+		if l.present(now) {
+			l.emptySince = time.Time{}
 			continue
 		}
-		if r.present(now) {
-			r.emptySince = time.Time{}
-			continue
+		if l.emptySince.IsZero() {
+			l.emptySince = now
 		}
-		if r.emptySince.IsZero() {
-			r.emptySince = now
-		}
-		if now.Sub(r.emptySince) >= EmptyGrace {
-			delete(m.rooms, id)
+		if now.Sub(l.emptySince) >= IdleGrace {
+			delete(m.lobbies, id)
 		}
 	}
 }
 
-// Start runs the expiry sweep every second until ctx is cancelled. It
-// is a single server-wide goroutine; individual rooms never own one.
+// Start runs the reclaim sweep every second until ctx is cancelled. It
+// is a single server-wide goroutine; individual lobbies never own one.
 func (m *Manager) Start(ctx context.Context) {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
@@ -239,9 +229,9 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// Len reports the number of live rooms. Used by tests.
+// Len reports the number of live instances. Used by tests.
 func (m *Manager) Len() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.rooms)
+	return len(m.lobbies)
 }

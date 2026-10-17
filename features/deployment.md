@@ -42,6 +42,33 @@ The server binds to `ADDR` (full `host:port`) when set, which is what
 the systemd unit provides; otherwise it falls back to `-port`/`PORT`
 (default `8080`) for local development.
 
+## LOBBY_KEY
+
+`LOBBY_KEY` signs player credentials (`features/rooms.md`). It must be
+stable across restarts and identical for every process serving the same
+lobby links, so it lives on the host rather than in the repository.
+
+The unit reads it from an environment file owned by root:
+
+```
+printf 'LOBBY_KEY=%s\n' "$(head -c 32 /dev/urandom | base64 | tr -d '=+/')" \
+  > /etc/asteroids.env
+chmod 600 /etc/asteroids.env
+```
+
+and the unit references it:
+
+```
+EnvironmentFile=/etc/asteroids.env
+```
+
+then `systemctl daemon-reload && systemctl restart asteroids`.
+
+If `LOBBY_KEY` is missing the process starts anyway with a random key
+and logs a warning; owner credentials then stop verifying after each
+restart (lobbies fall back to guest-only, links still resolve). Set the
+key before the first deploy that ships the lobby.
+
 ## Notes
 
 - A deploy restart drops all in-memory rooms; players rejoin through

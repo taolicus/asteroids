@@ -1,9 +1,12 @@
 const API = "/api";
 const POLL_MS = 2000;
+const IDENTITY_KEY = "asteroids-identity";
 
 const $ = (id) => document.getElementById(id);
+
+// The arena canvas is the eventual game surface; size it now so the
+// renderer task can draw into it.
 const canvas = $("arena");
-const ctx = canvas.getContext("2d");
 
 function resize() {
   canvas.width = canvas.clientWidth * devicePixelRatio;
@@ -13,48 +16,71 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-// --- room helpers ---
+// --- storage helpers (private browsing may deny localStorage) ---
 
-function roomId() {
-  return new URLSearchParams(location.search).get("r");
-}
-
-function tokenKey(id) {
-  return `asteroids-room:${id}`;
-}
-
-function loadToken(id) {
+function read(key) {
   try {
-    return JSON.parse(localStorage.getItem(tokenKey(id)))?.token || "";
+    return JSON.parse(localStorage.getItem(key));
   } catch {
-    return "";
+    return null;
   }
 }
 
-function saveToken(id, data) {
+function write(key, value) {
   try {
-    localStorage.setItem(tokenKey(id), JSON.stringify(data));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // storage unavailable: reconnect just won't survive a refresh
+    // Storage unavailable: the identity or seat just won't survive a
+    // reload. Everything still works for this page view.
   }
 }
 
-function show(view) {
-  for (const v of ["home", "room", "error"]) $(v).hidden = v !== view;
+function remove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Nothing to do.
+  }
 }
 
-function showError(message) {
-  clearInterval(pollTimer);
-  $("error-message").textContent = message;
-  show("error");
+// --- identity ---
+//
+// A player's pseudo-identity is global to the browser: a public lobby ID
+// plus a secret owner credential, created on first visit and kept
+// forever. The lobby link (?r=<lobbyId>) is permanent; the server
+// recreates the ephemeral instance whenever it is used.
+
+let identity = null;
+
+async function ensureIdentity() {
+  if (identity) return identity;
+  const saved = read(IDENTITY_KEY);
+  if (saved && saved.lobbyId && saved.token) {
+    identity = saved;
+    return identity;
+  }
+  const data = await fetchJSON(`${API}/identities`, { method: "POST" });
+  identity = { lobbyId: data.lobbyId, token: data.token };
+  write(IDENTITY_KEY, identity);
+  return identity;
 }
 
-async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
-  });
+// A guest's reconnect token belongs to one room instance, so it is
+// stored per lobby ID and can be discarded freely.
+const guestKey = (lobbyId) => `asteroids-guest:${lobbyId}`;
+
+function loadGuestToken(lobbyId) {
+  return read(guestKey(lobbyId))?.token || "";
+}
+
+function saveGuestToken(lobbyId, token) {
+  write(guestKey(lobbyId), { token });
+}
+
+// --- HTTP ---
+
+async function fetchJSON(url, options) {
+  const res = await fetch(url, options);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || `request failed (${res.status})`);
@@ -64,100 +90,153 @@ async function postJSON(url, body) {
   return data;
 }
 
-// --- room flow ---
+// --- lobby flow ---
 
+// session is the lobby this page is looking at.
+let session = null;
 let pollTimer = null;
 
-async function createRoom() {
+async function start() {
+  let lobbyId;
   try {
-    const res = await postJSON(`${API}/rooms`, {});
-    location.search = `?r=${encodeURIComponent(res.id)}`;
+    const me = await ensureIdentity();
+    lobbyId = new URLSearchParams(location.search).get("r") || me.lobbyId;
   } catch {
-    showError("Could not create a room. Check your connection and try again.");
-  }
-}
-
-async function joinRoom(id) {
-  let res;
-  try {
-    res = await postJSON(`${API}/rooms/${encodeURIComponent(id)}/join`, {
-      token: loadToken(id),
-    });
-  } catch (e) {
-    if (e.status === 404) {
-      showError("Room not found. It may have expired — ask for a fresh link.");
-    } else if (e.status === 409) {
-      showError("This room is full. Only two players can join.");
-    } else {
-      showError("Could not join the room. Check your connection and reload.");
-    }
+    showError("Could not reach the server. Check your connection and reload.");
     return;
   }
-  saveToken(id, { role: res.role, token: res.token });
-  enterRoom(id, res.role, res.token);
+  await openLobby(lobbyId);
 }
 
-function enterRoom(id, role, token) {
-  show("room");
-  $("role").textContent = role;
-  $("share-link").value = `${location.origin}${location.pathname}?r=${id}`;
-  poll(id, token);
+// openLobby enters (or re-enters) a lobby and starts polling it. It is
+// used for the first visit and to recover after an instance is reclaimed
+// or a guest seat is lost.
+async function openLobby(lobbyId) {
+  const me = identity;
+  const ownLobby = lobbyId === me.lobbyId;
+  const credential = ownLobby ? me.token : loadGuestToken(lobbyId);
+
+  let data;
+  try {
+    data = await fetchJSON(`${API}/lobby/${encodeURIComponent(lobbyId)}`, {
+      method: "POST",
+      headers: credential ? { "X-Player-Token": credential } : {},
+    });
+  } catch (e) {
+    showError(errorMessage(e));
+    return;
+  }
+
+  if (data.seat === "guest" && data.token) {
+    saveGuestToken(lobbyId, data.token);
+  }
+  session = {
+    lobbyId,
+    owner: data.seat === "owner",
+    token: data.seat === "owner" ? me.token : data.token || credential,
+    path: data.path,
+  };
+  render(data);
+
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => poll(id, token), POLL_MS);
+  pollTimer = setInterval(poll, POLL_MS);
 }
 
-async function poll(id, token) {
-  let res;
+async function poll() {
+  if (!session) return;
+  let data;
   try {
-    const http = await fetch(`${API}/rooms/${encodeURIComponent(id)}`, {
-      headers: { "X-Player-Token": token },
+    data = await fetchJSON(`${API}/lobby/${encodeURIComponent(session.lobbyId)}`, {
+      headers: session.token ? { "X-Player-Token": session.token } : {},
     });
-    if (!http.ok) {
-      const err = new Error(`status ${http.status}`);
-      err.status = http.status;
-      throw err;
-    }
-    res = await http.json();
   } catch (e) {
-    if (e.status === 404) {
-      showError("The room has expired. Ask for a fresh link.");
+    // 404: the instance was reclaimed while nobody was connected.
+    // 401: our guest seat was handed to someone else.
+    // Either way, re-entering recreates or reclaims the seat.
+    if (e.status === 404 || e.status === 401) {
+      await openLobby(session.lobbyId);
     }
-    // transient network errors: keep polling
+    // Transient network errors: keep polling.
     return;
   }
+  render(data);
+}
 
-  if (res.state === "ready") {
-    $("state").textContent = "Both players are in. Game starting soon!";
-  } else {
-    $("state").textContent = "Waiting for the other player to open the link…";
-  }
-  const other = res.role === "pilot" ? "gunner" : "pilot";
-  const otherHere = res.role === "pilot" ? res.gunner : res.pilot;
-  if (res.state === "ready") {
-    $("partner").textContent = otherHere
-      ? `Your ${other} is here.`
-      : `Your ${other} is disconnected — waiting for them to come back.`;
-  } else {
-    $("partner").textContent = "";
+// --- rendering ---
+
+function render(data) {
+  show("lobby");
+  const owner = data.seat === "owner";
+  $("seat").textContent = owner
+    ? "You own this lobby."
+    : "You're the guest in this lobby.";
+  $("state").textContent = owner ? ownerState(data) : guestState(data);
+  $("share").hidden = !owner;
+  if (owner) {
+    $("share-link").value = `${location.origin}${data.path}`;
   }
 }
 
-$("create").addEventListener("click", createRoom);
+function ownerState(data) {
+  return data.guest
+    ? "Your copilot is here."
+    : "Waiting for your copilot to open the link.";
+}
+
+function guestState(data) {
+  return data.owner
+    ? "The owner is here."
+    : "You're waiting for the owner to show up.";
+}
+
+function show(view) {
+  for (const v of ["lobby", "error"]) $(v).hidden = v !== view;
+}
+
+function showError(message) {
+  clearInterval(pollTimer);
+  session = null;
+  $("error-message").textContent = message;
+  show("error");
+}
+
+function errorMessage(e) {
+  if (e.status === 404) return "This link doesn't point to a lobby.";
+  if (e.status === 409) return "This lobby is already full.";
+  return "Something went wrong. Check your connection and reload.";
+}
+
+// --- share affordance ---
+
+function shareLink() {
+  return $("share-link").value;
+}
+
+if (navigator.share) {
+  $("share-button").hidden = false;
+}
+
+$("share-button").addEventListener("click", async () => {
+  try {
+    await navigator.share({
+      title: "Two Idiots, One Ship",
+      text: "Be my copilot:",
+      url: shareLink(),
+    });
+  } catch {
+    // The user dismissed the share sheet; nothing to do.
+  }
+});
+
 $("copy").addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText($("share-link").value);
+    await navigator.clipboard.writeText(shareLink());
     $("copy").textContent = "Copied!";
   } catch {
-    // clipboard unavailable: the link is selectable in the input
+    // Clipboard unavailable: the link is selectable in the input.
   }
 });
-$("home-again").addEventListener("click", () => {
-  location.search = "";
-});
 
-const id = roomId();
-if (id) {
-  joinRoom(id);
-} else {
-  show("home");
-}
+$("retry").addEventListener("click", () => location.reload());
+
+start();

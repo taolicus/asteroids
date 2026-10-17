@@ -11,26 +11,22 @@
     <h1>Two Idiots, One Ship</h1>
     <canvas id="arena" hidden></canvas>
 
-    <section id="home">
-      <p class="tagline">Two idiots, one ship. One pilots, one shoots, both survive the asteroid field together.</p>
-      <button id="create">Create a room</button>
-      <p class="hint">Or open a shared room link to join your copilot.</p>
-    </section>
-
-    <section id="room" hidden>
-      <p>You are the <strong id="role"></strong>.</p>
+    <section id="lobby" hidden>
+      <p id="seat"></p>
       <p id="state"></p>
-      <p id="partner"></p>
-      <div id="share" class="share">
+      <div id="share" class="share" hidden>
         <p class="hint">Send this link to your copilot:</p>
         <input id="share-link" readonly>
-        <button id="copy">Copy</button>
+        <div class="actions">
+          <button id="share-button" hidden>Share link</button>
+          <button id="copy">Copy link</button>
+        </div>
       </div>
     </section>
 
     <section id="error" hidden>
       <p id="error-message"></p>
-      <button id="home-again">Back</button>
+      <button id="retry">Reload</button>
     </section>
   </main>
   <script src="app.js"></script>

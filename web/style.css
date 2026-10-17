@@ -89,3 +89,13 @@ button:active {
   font-size: 0.9rem;
   text-align: center;
 }
+
+#seat {
+  font-size: 1.05rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}

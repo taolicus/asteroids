@@ -1,31 +1,36 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/taolicus/asteroids/internal/identity"
 	"github.com/taolicus/asteroids/internal/rooms"
 )
 
+const testKey = "server-test-key"
+
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	ts := httptest.NewServer(Handler(rooms.NewManager()))
+	return newTestServerWithKey(t, testKey)
+}
+
+func newTestServerWithKey(t *testing.T, key string) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(Handler(rooms.NewManager(), identity.NewIssuer([]byte(key))))
 	t.Cleanup(ts.Close)
 	return ts
 }
 
-func postJSON(t *testing.T, url string, body any, token string) (*http.Response, map[string]any) {
+func doJSON(t *testing.T, method, url, token string) (*http.Response, map[string]any) {
 	t.Helper()
-	buf, _ := json.Marshal(body)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(buf))
+	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set(playerTokenHeader, token)
 	}
@@ -33,147 +38,190 @@ func postJSON(t *testing.T, url string, body any, token string) (*http.Response,
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	t.Cleanup(func() { res.Body.Close() })
 	var data map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
-		t.Fatalf("decode %s %s: %v", res.Request.Method, url, err)
+		t.Fatalf("decode %s %s: %v", method, url, err)
 	}
 	return res, data
 }
 
-func getStatus(t *testing.T, url, token string) (*http.Response, map[string]any) {
+// issueIdentity creates a fresh identity and returns its lobby ID and
+// owner credential.
+func issueIdentity(t *testing.T, ts *httptest.Server) (lobbyID, token string) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set(playerTokenHeader, token)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	var data map[string]any
-	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
-		t.Fatal(err)
-	}
-	return res, data
-}
-
-func createRoom(t *testing.T, ts *httptest.Server) string {
-	t.Helper()
-	res, data := postJSON(t, ts.URL+"/api/rooms", map[string]any{}, "")
+	res, data := doJSON(t, http.MethodPost, ts.URL+"/api/identities", "")
 	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("create status = %d, want 201", res.StatusCode)
+		t.Fatalf("identities status = %d, want 201", res.StatusCode)
 	}
-	id, _ := data["id"].(string)
-	if id == "" {
-		t.Fatalf("create response missing id: %v", data)
+	lobbyID, _ = data["lobbyId"].(string)
+	token, _ = data["token"].(string)
+	if !identity.ValidID(lobbyID) {
+		t.Fatalf("lobby ID %q is not valid", lobbyID)
 	}
-	if want := "/?r=" + id; data["link"] != want {
-		t.Fatalf("link = %v, want %q", data["link"], want)
+	if token == "" {
+		t.Fatal("identity response missing token")
 	}
-	return id
+	return lobbyID, token
 }
 
-func join(t *testing.T, ts *httptest.Server, id, token string) (string, string) {
+func enterLobby(t *testing.T, ts *httptest.Server, id, token string) (*http.Response, map[string]any) {
 	t.Helper()
-	res, data := postJSON(t, fmt.Sprintf("%s/api/rooms/%s/join", ts.URL, id),
-		map[string]any{"token": token}, "")
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("join status = %d, body %v, want 200", res.StatusCode, data)
-	}
-	role, _ := data["role"].(string)
-	tok, _ := data["token"].(string)
-	return role, tok
+	return doJSON(t, http.MethodPost, fmt.Sprintf("%s/api/lobby/%s", ts.URL, id), token)
 }
 
-func TestCreateJoinStatusFlow(t *testing.T) {
+func lobbyStatus(t *testing.T, ts *httptest.Server, id, token string) (*http.Response, map[string]any) {
+	t.Helper()
+	return doJSON(t, http.MethodGet, fmt.Sprintf("%s/api/lobby/%s", ts.URL, id), token)
+}
+
+func TestIdentityEndpoint(t *testing.T) {
 	ts := newTestServer(t)
-	id := createRoom(t, ts)
-
-	role, pilotToken := join(t, ts, id, "")
-	if role != "pilot" || pilotToken == "" {
-		t.Fatalf("first join = %q, %q", role, pilotToken)
+	id1, tok1 := issueIdentity(t, ts)
+	id2, _ := issueIdentity(t, ts)
+	if id1 == id2 {
+		t.Fatal("two identities share a lobby ID")
 	}
-	role, gunnerToken := join(t, ts, id, "")
-	if role != "gunner" || gunnerToken == "" {
-		t.Fatalf("second join = %q, %q", role, gunnerToken)
-	}
-
-	res, data := getStatus(t, fmt.Sprintf("%s/api/rooms/%s", ts.URL, id), pilotToken)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", res.StatusCode)
-	}
-	if data["role"] != "pilot" || data["state"] != "ready" ||
-		data["pilot"] != true || data["gunner"] != true {
-		t.Fatalf("status body = %v", data)
+	if tok1 == "" {
+		t.Fatal("missing credential")
 	}
 }
 
-func TestJoinErrors(t *testing.T) {
+func TestOwnerAndGuestFlow(t *testing.T) {
 	ts := newTestServer(t)
-	id := createRoom(t, ts)
-	join(t, ts, id, "")
-	join(t, ts, id, "")
+	id, token := issueIdentity(t, ts)
 
-	res, _ := postJSON(t, fmt.Sprintf("%s/api/rooms/%s/join", ts.URL, id),
-		map[string]any{}, "")
+	// The owner enters their own lobby.
+	res, data := enterLobby(t, ts, id, token)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("owner enter = %d, %v", res.StatusCode, data)
+	}
+	if data["seat"] != "owner" || data["state"] != "waiting" ||
+		data["owner"] != true || data["guest"] != false {
+		t.Fatalf("owner enter body = %v", data)
+	}
+	if want := "/?r=" + id; data["path"] != want {
+		t.Fatalf("path = %v, want %q", data["path"], want)
+	}
+	if data["token"] != nil {
+		t.Fatalf("owner was issued a reconnect token: %v", data["token"])
+	}
+
+	// A guest opens the link with no credential and gets the guest seat.
+	res, data = enterLobby(t, ts, id, "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("guest enter = %d, %v", res.StatusCode, data)
+	}
+	guestToken, _ := data["token"].(string)
+	if data["seat"] != "guest" || data["state"] != "ready" || guestToken == "" {
+		t.Fatalf("guest enter body = %v", data)
+	}
+
+	// The owner polls and sees the guest.
+	res, data = lobbyStatus(t, ts, id, token)
+	if res.StatusCode != http.StatusOK || data["seat"] != "owner" || data["state"] != "ready" ||
+		data["owner"] != true || data["guest"] != true {
+		t.Fatalf("owner status = %d, %v", res.StatusCode, data)
+	}
+	// The guest polls with their own token.
+	res, data = lobbyStatus(t, ts, id, guestToken)
+	if res.StatusCode != http.StatusOK || data["seat"] != "guest" || data["state"] != "ready" {
+		t.Fatalf("guest status = %d, %v", res.StatusCode, data)
+	}
+}
+
+func TestGuestWaitsForAbsentOwner(t *testing.T) {
+	ts := newTestServer(t)
+	id, _ := issueIdentity(t, ts)
+
+	// Only the guest is here; the owner's seat stays reserved.
+	_, data := enterLobby(t, ts, id, "")
+	if data["seat"] != "guest" || data["state"] != "waiting" || data["owner"] != false {
+		t.Fatalf("guest-first enter = %v", data)
+	}
+}
+
+func TestSecondGuestSeesFull(t *testing.T) {
+	ts := newTestServer(t)
+	id, _ := issueIdentity(t, ts)
+	enterLobby(t, ts, id, "")
+	enterLobby(t, ts, id, "")
+
+	res, data := enterLobby(t, ts, id, "")
 	if res.StatusCode != http.StatusConflict {
-		t.Fatalf("third join = %d, want 409", res.StatusCode)
-	}
-
-	res, data := postJSON(t, ts.URL+"/api/rooms/doesnotexist/join",
-		map[string]any{}, "")
-	if res.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown room join = %d (body %v), want 404", res.StatusCode, data)
+		t.Fatalf("second guest = %d (%v), want 409", res.StatusCode, data)
 	}
 }
 
-func TestTokenReattachWhenFull(t *testing.T) {
+func TestForeignCredentialIsTreatedAsGuest(t *testing.T) {
 	ts := newTestServer(t)
-	id := createRoom(t, ts)
-	_, pilotToken := join(t, ts, id, "")
-	join(t, ts, id, "")
+	id, _ := issueIdentity(t, ts)
+	_, foreignToken := issueIdentity(t, ts) // belongs to another lobby
 
-	role, token := join(t, ts, id, pilotToken)
-	if role != "pilot" || token != pilotToken {
-		t.Fatalf("reattach = %q/%q, want pilot/own token", role, token)
+	res, data := enterLobby(t, ts, id, foreignToken)
+	if res.StatusCode != http.StatusOK || data["seat"] != "guest" {
+		t.Fatalf("foreign credential enter = %d, %v; want guest", res.StatusCode, data)
 	}
 }
 
-func TestStatusAuth(t *testing.T) {
+func TestLobbyIDValidation(t *testing.T) {
 	ts := newTestServer(t)
-	id := createRoom(t, ts)
-	join(t, ts, id, "")
-	_, gunnerToken := join(t, ts, id, "")
+	for _, bad := range []string{"short", "not-base64url!", "toolongtobeanid"} {
+		res, _ := enterLobby(t, ts, bad, "")
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("enter %q = %d, want 404", bad, res.StatusCode)
+		}
+		res, _ = lobbyStatus(t, ts, bad, "whatever")
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("status %q = %d, want 404", bad, res.StatusCode)
+		}
+	}
+}
 
-	res, _ := getStatus(t, fmt.Sprintf("%s/api/rooms/%s", ts.URL, id), "")
+func TestStatusAuthentication(t *testing.T) {
+	ts := newTestServer(t)
+	id, token := issueIdentity(t, ts)
+	enterLobby(t, ts, id, token)
+	_, guestData := enterLobby(t, ts, id, "")
+	guestToken, _ := guestData["token"].(string)
+
+	res, _ := lobbyStatus(t, ts, id, "")
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("no token = %d, want 401", res.StatusCode)
 	}
-	res, _ = getStatus(t, fmt.Sprintf("%s/api/rooms/%s", ts.URL, id), "wrong")
+	res, _ = lobbyStatus(t, ts, id, "wrong-token")
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("wrong token = %d, want 401", res.StatusCode)
 	}
-	res, _ = getStatus(t, ts.URL+"/api/rooms/missing", gunnerToken)
+	// A valid-shaped but never-used lobby ID is unknown, not an error.
+	res, _ = lobbyStatus(t, ts, "zzzzzzzzzzzz", guestToken)
 	if res.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown room = %d, want 404", res.StatusCode)
+		t.Fatalf("unknown lobby = %d, want 404", res.StatusCode)
 	}
 }
 
-func TestJoinRejectsInvalidJSON(t *testing.T) {
-	ts := newTestServer(t)
-	id := createRoom(t, ts)
-	req, _ := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/api/rooms/%s/join", ts.URL, id),
-		bytes.NewReader([]byte("{not json")))
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+func TestCredentialSurvivesRestartWithSameKey(t *testing.T) {
+	first := newTestServerWithKey(t, testKey)
+	id, token := issueIdentity(t, first)
+
+	// A restart is a new process: fresh manager and issuer, same key.
+	second := newTestServerWithKey(t, testKey)
+	res, data := enterLobby(t, second, id, token)
+	if res.StatusCode != http.StatusOK || data["seat"] != "owner" {
+		t.Fatalf("after restart = %d, %v; want owner seat", res.StatusCode, data)
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("invalid body = %d, want 400", res.StatusCode)
+	if want := "/?r=" + id; data["path"] != want {
+		t.Fatalf("link changed across restart: %v, want %q", data["path"], want)
+	}
+}
+
+func TestCredentialFailsWithDifferentKey(t *testing.T) {
+	first := newTestServerWithKey(t, testKey)
+	id, token := issueIdentity(t, first)
+
+	other := newTestServerWithKey(t, "a-different-key")
+	res, data := enterLobby(t, other, id, token)
+	if res.StatusCode != http.StatusOK || data["seat"] != "guest" {
+		t.Fatalf("different key = %d, %v; want guest fallback", res.StatusCode, data)
 	}
 }
