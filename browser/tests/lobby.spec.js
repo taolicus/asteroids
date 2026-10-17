@@ -4,10 +4,27 @@
 // this equivalent to the manual two-browser check: contexts do not
 // share localStorage, so they hold independent identities and seats
 // against the same server.
-import { test, expect } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
 
 // Share links are permanent: /?r=<12-char lobby ID>.
 const LOBBY_LINK = /\/\?r=[A-Za-z0-9_-]{12}$/;
+
+// The `players` fixture opens extra isolated players and closes them
+// when the test ends.
+const test = base.extend({
+  players: async ({ browser }, use) => {
+    const contexts = [];
+    const open = async () => {
+      const context = await browser.newContext();
+      contexts.push(context);
+      return { context, page: await context.newPage() };
+    };
+    await use(open);
+    for (const context of contexts) {
+      await context.close();
+    }
+  },
+});
 
 // Reads the owner's share link, asserting the lobby view is up first.
 async function shareLink(page) {
@@ -16,19 +33,6 @@ async function shareLink(page) {
   expect(link).toMatch(LOBBY_LINK);
   return link;
 }
-
-// Opens a second, fully isolated player.
-async function newPlayer(browser, testInfo) {
-  const context = await browser.newContext();
-  (testInfo.__contexts ??= []).push(context);
-  return { context, page: await context.newPage() };
-}
-
-test.afterEach(async ({}, testInfo) => {
-  for (const context of testInfo.__contexts ?? []) {
-    await context.close();
-  }
-});
 
 test("index page is the owner's lobby, not a create screen", async ({ page }) => {
   await page.goto("/");
@@ -51,11 +55,11 @@ test("the identity and its link survive a reload", async ({ page }) => {
   expect(await shareLink(page)).toBe(before);
 });
 
-test("a guest opening the link joins as guest and both see ready", async ({ page, browser }, testInfo) => {
+test("a guest opening the link joins as guest and both see ready", async ({ page, players }) => {
   await page.goto("/");
   const link = await shareLink(page);
 
-  const guest = await newPlayer(browser, testInfo);
+  const guest = await players();
   await guest.page.goto(link);
 
   await expect(guest.page.locator("#seat")).toHaveText("You're the guest in this lobby.");
@@ -67,15 +71,15 @@ test("a guest opening the link joins as guest and both see ready", async ({ page
   await expect(page.locator("#state")).toHaveText("Your copilot is here.");
 });
 
-test("a third player sees the lobby as full", async ({ page, browser }, testInfo) => {
+test("a third player sees the lobby as full", async ({ page, players }) => {
   await page.goto("/");
   const link = await shareLink(page);
 
-  const guest = await newPlayer(browser, testInfo);
+  const guest = await players();
   await guest.page.goto(link);
   await expect(guest.page.locator("#seat")).toHaveText("You're the guest in this lobby.");
 
-  const third = await newPlayer(browser, testInfo);
+  const third = await players();
   await third.page.goto(link);
 
   await expect(third.page.locator("#error")).toBeVisible();
