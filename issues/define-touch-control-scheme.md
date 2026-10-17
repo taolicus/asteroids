@@ -16,3 +16,10 @@ Decide the touch control scheme for both roles before
 
 Each player is on their own device (per README success criteria), so
 each screen only needs its own role's controls.
+
+The wire contract is already settled
+(`tasks/closed/define-input-intent-contract.md`): the pilot posts
+`{seq, rotate, thrust}` and the gunner posts `{seq, fire}`. Turret aim,
+if adopted, adds an `aim` field to the gunner payload rather than
+changing what exists; the client also owns the posting cadence (10 Hz
+keepalive) that keeps held buttons alive.
