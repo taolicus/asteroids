@@ -69,4 +69,29 @@ Playwright half runs in CI only, since it cannot run on the dev device.
 
 ## Outcome
 
-Delivered in `<commit>`.
+Delivered in `6fddbf1` ("Aim and fire the gunner's turret from one stick").
+
+As specified: the fire button is gone from the page, the stylesheet, the
+controls, and the wiring; the gunner's stick became `stickAim`, the same
+two-stage shape as the pilot's `stickSteer` — the drag direction is `aim`,
+a pull past `FIRE_ZONE` (55% of the stick radius, its own constant, so it
+can be tuned apart from the pilot's throttle) is `fire`, and inside the dead
+zone neither is sent, so the remembered aim stands. The mouse and the space
+bar still set `fire` directly and merge by OR, so the desktop path is
+unchanged. No wire change was needed: the payload already carried `aim` and
+`fire`, and the server is untouched beyond a comment.
+
+Verified: the browser arithmetic cases evaluate the shipped `stickAim` (the
+dead zone, a light pull aiming without firing, a firm pull firing, and a
+longer pull along the same ray leaving the aim alone); the band case asserts
+each role sees only their own stick and that `#fire` no longer exists; the
+end-to-end case drives one drag from a light pull (an `aim` with no `fire`)
+to a firm one (both) to a release (fire off, aim standing). CI is green on
+that suite. Locally, `attach-check.js` covered the same path against a fake
+DOM plus the space key, `controls-check.js` the helper arithmetic, and
+`go test ./...` passes with the server unchanged.
+
+Limitations: whether pull-to-fire fires when the player means it to — and
+how far the second stage's pull should travel — is a feel question only a
+real device can settle; it stays with
+`tasks/open/deploy-shared-playtest-instance.md`, which now names it.
