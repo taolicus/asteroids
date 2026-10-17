@@ -3,9 +3,14 @@ area: rooms
 dependencies:
   - resolve-room-lifecycle.md
   - scaffold-project.md
+  - player-owned-lobby-rooms.md
 ---
 
 # Implement room create/join
+
+Note: `player-owned-lobby-rooms.md` proposes player-owned lobby rooms
+that supersede parts of this task (the index lobby, identity, and share
+affordances). Revise the criteria below when that issue is settled.
 
 Two-player rooms with role assignment, per the settled decisions in
 `resolve-room-lifecycle.md`:
