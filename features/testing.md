@@ -8,7 +8,8 @@ Three layers, each covering what the others cannot:
   injected (`Manager.now`) so expiry is tested without sleeping.
 - **Browser tests** (`browser/`) drive the served frontend in a real
   browser. They are the only layer that exercises the DOM, the
-  `localStorage` identity, and the two-player seating flow end to end.
+  `localStorage` identity, the two-player seating flow, and the canvas
+  renderer end to end.
 - **A manual curl smoke test** is used when checking a deployment
   (identity → owner → guest → ready, plus the 4xx states).
 
@@ -22,6 +23,20 @@ embedded frontend and API that production serves — no mocks.
 A "second browser" is a second Playwright browser context: contexts do
 not share `localStorage`, so they hold independent identities and
 seats, which is exactly the manual two-browser check.
+
+`browser/tests/fixtures.js` holds the shared `players` fixture and
+`shareLink` helper; spec files import them, and the file is not itself
+collected as a test.
+
+The renderer spec (`browser/tests/renderer.spec.js`) has two halves. The
+interpolation cases run `page.evaluate` against the page's own `Interp`
+module, so they test the shipped arithmetic (the 100 ms delay, the freeze,
+wraparound, gap/large-jump snapping, duplicate rejection, and id pairing)
+rather than a copy. The end-to-end cases play a ready lobby in two
+contexts and assert the arena and HUD appear, the survival timer advances,
+and the canvas has actually been drawn. Note that a headless browser can
+run the interpolation cases without a second player; only the end-to-end
+cases need the guest.
 
 Run locally:
 

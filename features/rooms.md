@@ -85,9 +85,11 @@ the Web Share API when available, otherwise copy-to-clipboard.
 `/?r=<id>` enters that lobby: the owner credential claims the owner
 seat, everyone else joins as guest (a stored per-instance guest token
 reconnects to the same seat). There is no create button and no home
-screen. The client polls status every 2s — until
-`implement-client-renderer.md` consumes the live snapshot stream
-(`features/game-loop.md`) — and re-enters when an instance has been
-reclaimed (404) or a guest seat was lost (401). Full (409) and
-malformed-link (404) cases render readable states, never a broken
-screen. The UI is covered by browser tests (`features/testing.md`).
+screen. The client polls status every 2s while the lobby is waiting for
+its second player; once both seats are filled it stops polling, opens
+the live snapshot stream, and renders the shared arena
+(`features/renderer.md`). It re-enters when an instance has been
+reclaimed (404) or a guest seat was lost (401), and returns to polling
+if the room is waiting again (409). Full (409) and malformed-link (404)
+cases render readable states, never a broken screen. The UI is covered
+by browser tests (`features/testing.md`).

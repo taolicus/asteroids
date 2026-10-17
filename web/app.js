@@ -1,11 +1,13 @@
 const API = "/api";
 const POLL_MS = 2000;
 const IDENTITY_KEY = "asteroids-identity";
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 5000;
 
 const $ = (id) => document.getElementById(id);
 
-// The arena canvas is the eventual game surface; size it now so the
-// renderer task can draw into it.
+// The arena canvas is the game surface; size it to its CSS box now and on
+// every resize.
 const canvas = $("arena");
 
 function resize() {
@@ -92,9 +94,11 @@ async function fetchJSON(url, options) {
 
 // --- lobby flow ---
 
-// session is the lobby this page is looking at.
+// session is the lobby this page is looking at; game is the running
+// render loop and snapshot stream, or null while waiting.
 let session = null;
 let pollTimer = null;
+let game = null;
 
 async function start() {
   let lobbyId;
@@ -108,10 +112,10 @@ async function start() {
   await openLobby(lobbyId);
 }
 
-// openLobby enters (or re-enters) a lobby and starts polling it. It is
-// used for the first visit and to recover after an instance is reclaimed
-// or a guest seat is lost.
+// openLobby enters (or re-enters) a lobby. It is used for the first visit
+// and to recover after an instance is reclaimed or a guest seat is lost.
 async function openLobby(lobbyId) {
+  stopGame();
   const me = identity;
   const ownLobby = lobbyId === me.lobbyId;
   const credential = ownLobby ? me.token : loadGuestToken(lobbyId);
@@ -138,6 +142,16 @@ async function openLobby(lobbyId) {
   };
   render(data);
 
+  // A ready lobby plays; otherwise keep polling for the second player.
+  if (isReady(data)) startGame();
+  else startPolling();
+}
+
+function isReady(data) {
+  return data && data.state === "ready";
+}
+
+function startPolling() {
   clearInterval(pollTimer);
   pollTimer = setInterval(poll, POLL_MS);
 }
@@ -160,6 +174,170 @@ async function poll() {
     return;
   }
   render(data);
+  if (isReady(data)) startGame();
+}
+
+// --- game: snapshot stream and render loop ---
+
+// startGame opens the events stream and starts interpolating and drawing.
+// It is idempotent; polling stops once the game is running, per the
+// settled contract.
+function startGame() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+  if (game) return;
+
+  $("arena").hidden = false;
+  $("hud").hidden = false;
+  resize();
+
+  game = {
+    lobbyId: session.lobbyId,
+    token: session.token,
+    buffer: new Interp.SnapshotBuffer(),
+    renderer: Renderer.create(canvas),
+    controller: null,
+    raf: 0,
+    stopped: false,
+    connected: false,
+    retryMs: 0,
+    timer: 0,
+  };
+  game.raf = requestAnimationFrame(frame);
+  connectStream();
+}
+
+function stopGame() {
+  if (!game) return;
+  game.stopped = true;
+  cancelAnimationFrame(game.raf);
+  clearTimeout(game.timer);
+  if (game.controller) game.controller.abort();
+  game = null;
+  $("arena").hidden = true;
+  $("hud").hidden = true;
+}
+
+function frame(now) {
+  const g = game;
+  if (!g || g.stopped) return;
+
+  const view = g.buffer.sample(now);
+  if (view) {
+    g.renderer.render(view, now);
+    updateHud(view);
+  }
+  g.raf = requestAnimationFrame(frame);
+}
+
+function updateHud(view) {
+  setText($("hud-score"), String(view.score));
+  setText($("hud-time"), view.time.toFixed(1));
+  setText($("hud-lives"), String(Math.max(0, view.lives)));
+}
+
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+// connectStream opens one streaming fetch and reads SSE frames until it
+// ends. Because EventSource cannot set the player header or expose the
+// status, the client reads the body itself and reconnects with backoff,
+// or re-enters the lobby on 401/404.
+async function connectStream() {
+  const g = game;
+  if (!g || g.stopped) return;
+
+  g.controller = new AbortController();
+  let res;
+  try {
+    res = await fetch(`${API}/lobby/${encodeURIComponent(g.lobbyId)}/events`, {
+      headers: g.token ? { "X-Player-Token": g.token } : {},
+      signal: g.controller.signal,
+    });
+  } catch (e) {
+    if (g.stopped) return;
+    return scheduleReconnect();
+  }
+  if (g.stopped) return;
+
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 404) {
+      stopGame();
+      await openLobby(g.lobbyId);
+      return;
+    }
+    if (res.status === 409) {
+      // The room is waiting again: stop playing and poll until ready.
+      stopGame();
+      startPolling();
+      return;
+    }
+    return scheduleReconnect();
+  }
+
+  // A new connection is a fresh timeline: reset the seq watermark and the
+  // interpolation buffer, since a reclaimed lobby's sim restarts seq at 1.
+  g.buffer = new Interp.SnapshotBuffer();
+  g.connected = true;
+  g.retryMs = 0;
+
+  try {
+    await readStream(res.body, g);
+  } catch {
+    // Network error or abort; a stopped game is handled below.
+  }
+  if (g.stopped) return;
+  scheduleReconnect();
+}
+
+function scheduleReconnect() {
+  const g = game;
+  if (!g || g.stopped) return;
+  g.connected = false;
+  g.retryMs = g.retryMs ? Math.min(g.retryMs * 2, RECONNECT_MAX_MS) : RECONNECT_MIN_MS;
+  g.timer = setTimeout(() => {
+    if (game === g && !g.stopped) connectStream();
+  }, g.retryMs);
+}
+
+// readStream parses SSE frames out of the response body and pushes each
+// snapshot with its local arrival time.
+async function readStream(body, g) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffered += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffered.indexOf("\n\n")) >= 0) {
+      const frame = buffered.slice(0, end);
+      buffered = buffered.slice(end + 2);
+      if (g.stopped) return;
+      handleFrame(frame, g);
+    }
+  }
+}
+
+// handleFrame extracts the JSON payload of one SSE frame. Comments (the
+// keepalive) carry no data and are ignored.
+function handleFrame(frame, g) {
+  const dataLines = [];
+  for (let line of frame.split("\n")) {
+    if (line.endsWith("\r")) line = line.slice(0, -1);
+    if (line.startsWith(":")) continue;
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+  }
+  if (dataLines.length === 0) return;
+  let snap;
+  try {
+    snap = JSON.parse(dataLines.join("\n"));
+  } catch {
+    return;
+  }
+  g.buffer.push(snap, performance.now());
 }
 
 // --- rendering ---
@@ -195,6 +373,7 @@ function show(view) {
 
 function showError(message) {
   clearInterval(pollTimer);
+  stopGame();
   session = null;
   $("error-message").textContent = message;
   show("error");

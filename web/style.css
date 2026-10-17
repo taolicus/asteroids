@@ -36,9 +36,37 @@ h1 {
 #arena {
   width: 100%;
   max-width: 640px;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   background: #11141d;
   border: 1px solid #2a2f3d;
+  touch-action: none;
+}
+
+#hud {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  width: 100%;
+  max-width: 640px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 4rem;
+}
+
+.hud-label {
+  color: #767d8d;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud-item span:last-child {
+  font-size: 1.35rem;
 }
 
 section {

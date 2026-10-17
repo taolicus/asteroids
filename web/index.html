@@ -10,6 +10,11 @@
   <main>
     <h1>Two Idiots, One Ship</h1>
     <canvas id="arena" hidden></canvas>
+    <div id="hud" hidden>
+      <div class="hud-item"><span class="hud-label">Score</span><span id="hud-score">0</span></div>
+      <div class="hud-item"><span class="hud-label">Time</span><span id="hud-time">0.0</span></div>
+      <div class="hud-item"><span class="hud-label">Lives</span><span id="hud-lives">3</span></div>
+    </div>
 
     <section id="lobby" hidden>
       <p id="seat"></p>
@@ -29,6 +34,8 @@
       <button id="retry">Reload</button>
     </section>
   </main>
+  <script src="interp.js"></script>
+  <script src="renderer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
