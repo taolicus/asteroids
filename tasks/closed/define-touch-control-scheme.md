@@ -39,6 +39,15 @@ The joystick is an input device, not a new protocol: it emits the existing
 
 The turret aims independently of the ship's heading.
 
+Amended by delivery (`tasks/closed/implement-touch-controls-and-responsive-layout.md`,
+current truth in `features/controls.md`): the aim band is a *relative* stick,
+not an absolute one. The band sits below the arena, so a touch in it cannot
+name a point inside the arena — an absolute mapping could only ever aim
+downward and could not reach the full 360°. The aim is now the drag direction
+from the touch origin, and it is an *angle* rather than a target, so only the
+mouse path re-derives the aim as the ship moves. The rest of this section is
+as delivered; the bullets below stand as the record of the decision.
+
 - Aim: a touch in the aim band points the turret at the touched position —
   the angle from the ship's drawn position to that point, in the wire's
   radians-and-+X convention. Dragging re-aims continuously; the finger
