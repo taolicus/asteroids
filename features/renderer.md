@@ -2,7 +2,11 @@
 
 The browser draws the shared arena from the SSE snapshot stream. The
 frontend is four plain scripts, loaded in order (`web/index.html`); there
-is no bundler or build step. `web/web.go` embeds all of them.
+is no bundler or build step and no third-party request at runtime.
+`web/web.go` embeds all of them, the stylesheet, and the lobby title's
+display face — Michroma, vendored as `web/michroma-latin-400.woff2` with
+its SIL Open Font License text beside it. Only the title uses it; the rest
+of the UI, and the title too if the file were missing, is the system stack.
 
 - `web/interp.js` — pure interpolation: no DOM, no network. Exposes
   `Interp` (and `module.exports`, so Node can read it) with
@@ -64,9 +68,10 @@ time the stream connects, which resets the `seq` watermark.
 
 ## Round screens
 
-The lobby panel is the room link and is hidden while a round plays, so a
-phone spends that height on the arena; the arena and HUD are unhidden when
-the round starts and hidden again on exit.
+The landing heading — the rocket and the title, one `h1` — and the lobby
+panel are hidden while a round plays, so a phone spends that height on the
+arena; the arena and HUD are unhidden when the round starts and hidden
+again on exit.
 
 Roles are rolled per round, so each player is told theirs rather than
 assuming one: `app.js` compares the stream's `pilot` with the session's

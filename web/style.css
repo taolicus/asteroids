@@ -11,6 +11,19 @@
   display: none !important;
 }
 
+/* Only the lobby title uses Michroma (SIL Open Font License, vendored as
+   michroma-latin-400.woff2 beside its license text): the wide, Apollo-era
+   caps are the look the landing screen is after. The rest of the UI stays
+   on the system stack, and if the file is missing the title falls back to
+   it too. */
+@font-face {
+  font-family: "Michroma";
+  src: url("michroma-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 html,
 body {
   height: 100%;
@@ -27,16 +40,25 @@ main {
   padding: 1rem;
 }
 
+/* The title is two tracked-out uppercase lines in the display face; the
+   markup keeps sentence case so the page reads normally to a screen
+   reader. Michroma ships a single weight, so asking for more would only
+   get a synthesized one. */
 h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-family: "Michroma", system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 /* The rocket rides on top of the title. It lives inside the h1 so the
-   playing rule that hides the heading takes it with it. */
+   playing rule that hides the heading takes it with it, and a little
+   margin gives it room above the title. */
 #rocket {
   display: block;
+  margin: 0.25rem 0 0.5rem;
   font-size: 4rem;
   line-height: 1;
   text-align: center;

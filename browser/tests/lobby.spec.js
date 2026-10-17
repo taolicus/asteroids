@@ -14,13 +14,35 @@ test("index page is the owner's lobby, not a create screen", async ({ page }) =>
 
   await expect(page.locator("#lobby")).toBeVisible();
   await expect(page.locator("#share .hint")).toHaveText("Share your link with a friend:");
-  // The panel carries no ownership or waiting copy to drift out of date.
+  // The panel carries no ownership copy to drift out of date.
   await expect(page.locator("#seat")).toHaveCount(0);
   await expect(page.locator("#state")).toHaveCount(0);
   await expect(page.locator("#error")).toBeHidden();
   await shareLink(page);
 
   await expect(page.getByRole("button", { name: /create/i })).toHaveCount(0);
+});
+
+test("the landing heading is the two-line title in the display face", async ({ page }) => {
+  await page.goto("/");
+
+  // innerText carries the CSS uppercase, and Playwright normalizes the
+  // line break away, so the anchored pattern is what says the title is
+  // two lines and has no comma.
+  const heading = page.locator("h1");
+  await expect(heading).toHaveText(/^🚀\s+two idiots\s+one ship$/i);
+  await expect(heading).toHaveCSS("text-transform", "uppercase");
+
+  // The title face is vendored and embedded, so it must actually load: a
+  // misspelled file or a missing go:embed entry would only fall back to
+  // the system stack.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        [...document.fonts].some((f) => f.family === "Michroma" && f.status === "loaded"),
+      ),
+    )
+    .toBe(true);
 });
 
 test("the lobby says it is waiting, with a stepping ellipsis", async ({ page }) => {

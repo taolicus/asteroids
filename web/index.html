@@ -8,10 +8,13 @@
        data URI has to be: no image file to serve or cache. -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%80%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
+  <!-- The display face is the first thing the landing screen draws, so it
+       is fetched alongside the stylesheet rather than behind it. -->
+  <link rel="preload" href="michroma-latin-400.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
   <main>
-    <h1><span id="rocket" aria-hidden="true">🚀</span>Two Idiots, One Ship</h1>
+    <h1><span id="rocket" aria-hidden="true">🚀</span>Two Idiots<br>One Ship</h1>
     <div id="stage">
       <canvas id="arena" hidden></canvas>
     </div>
