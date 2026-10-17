@@ -120,10 +120,18 @@ Rules and tuning are settled in
   0 along +X. It spawns at the arena centre with no motion. The gunner's
   aim is separate state (`Snapshot.Turret`), so the hull and the barrel
   can point different ways.
-- `stepShip` is the physics: rotation from the pilot's turn axis,
-  thrust along the heading, light exponential damping, a speed cap, and
+- `stepShip` is the physics: rotation from the pilot's steering, thrust
+  along the heading, light exponential damping, a speed cap, and
   wraparound. It is a pure function of `(ship, intent, dt)`, so physics
   is tested without real time and behaves identically at any tick rate.
+- The pilot's steering is either the discrete `rotate` axis (the
+  keyboard) or the touch stick's absolute `steer`: `turnDelta` turns
+  toward a `steer` at the turn rate and clamps the step to the remaining
+  error, so the nose rests exactly on the stick's direction instead of
+  overshooting and hunting. `steer` wins when both are posted. Turning
+  it here, where the stick and the heading are known in the same tick,
+  is why the client needs no prediction against the stream's lag — see
+  `features/controls.md`.
 - The ship constants are grouped in `ShipTuning` (turn rate, thrust,
   damping, max speed, and the collision radius used against asteroids).
   They are initial values; there is no settled ship tuning document yet,
@@ -148,6 +156,9 @@ Clients send intentions, never state; the contract is settled in
   in radians, `0` along +X. The sim folds it into [-π, π) and falls back
   to the ship's heading when it is absent, so the field is additive and a
   client that never aims keeps the old behaviour.
+- The pilot's payload likewise carries an optional `steer`, an absolute
+  heading in the same convention, which the sim folds into [-π, π) and
+  turns the ship onto. Absent, `rotate` drives the turn as it always has.
 - Intents are latest-state. The loop keeps one intent slot per role and
   samples it every tick; a post whose `seq` is not newer is coalesced
   away rather than erroring.

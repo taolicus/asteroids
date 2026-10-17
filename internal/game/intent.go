@@ -16,14 +16,20 @@ const (
 )
 
 // Intent is a player's latest intention. Only the fields for the
-// player's role are meaningful: Rotate and Thrust for the pilot, Fire
-// and Aim for the gunner.
+// player's role are meaningful: Rotate, Steer, and Thrust for the pilot,
+// Fire and Aim for the gunner.
 type Intent struct {
 	// Seq is the client's monotonic counter; it orders posts that the
 	// network may reorder or duplicate.
 	Seq uint64
-	// Rotate is the pilot's turn axis: -1, 0, or +1.
+	// Rotate is the pilot's turn axis: -1, 0, or +1. It is what the
+	// keyboard sends, and it turns the ship when no Steer is posted.
 	Rotate int
+	// Steer is the pilot's stick direction in radians, an absolute
+	// world angle: the heading the stick points at, 0 along +X. It is
+	// optional; with one the ship turns toward it and rests on it, and
+	// it wins over Rotate when both are present.
+	Steer *float64
 	// Thrust is the pilot's thrust button.
 	Thrust bool
 	// Fire is the gunner's fire button.

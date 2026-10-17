@@ -10,7 +10,7 @@ is no bundler or build step. `web/web.go` embeds all of them.
 - `web/renderer.js` — canvas drawing only. Exposes `Renderer.create`.
 - `web/controls.js` — the control band and the intent poster
   (`features/controls.md`). Exposes `Controls.attach`, `createPoster`, and
-  the quantization and aim helpers, which are require()-able too.
+  the stick and aim helpers, which are require()-able too.
 - `web/app.js` — the lobby flow, the snapshot stream, the render loop, and
   the wiring between them, the renderer, and the controls.
 

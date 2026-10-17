@@ -9,7 +9,10 @@ the questions in `define-touch-control-scheme`. The wire contract stays
 `define-input-intent-contract.md`; adopting turret aim added one optional
 field to the gunner payload, implemented in
 `tasks/closed/implement-turret-aim.md` and recorded in that document
-together with the fire direction.
+together with the fire direction. Point-and-go pilot steering later added
+one optional field to the pilot payload, implemented in
+`tasks/closed/implement-point-and-go-pilot-steering.md` and recorded
+there too.
 
 Each player holds one role for a round and is on their own device, so a
 screen only ever shows its own role's controls. The client already knows
@@ -19,21 +22,42 @@ tells the player what they hold.
 
 ## Pilot: a floating virtual joystick
 
+Re-settled after the first playtest by
+`tasks/closed/implement-point-and-go-pilot-steering.md` (current truth in
+`features/controls.md`). The original decision quantized the drag per axis
+— `rotate` left and right of the dead zone, `thrust` from a pull upwards —
+which in the hand meant thrust only came from pulling up, rotation only
+from pulling sideways, and a 15% radius that left the pull distance with
+nothing to say. The stick is point-and-go now:
+
 - The band below the arena is the pilot's stick zone. A touch anywhere in
   it puts the stick base down there, so one thumb reaches it whatever the
   hand size; the base disappears on release.
-- The drag quantizes to the settled discrete intent. `rotate` is -1 left of
-  the dead zone and +1 right of it, else 0; `thrust` is true above the dead
-  zone, else false. A diagonal drag turns and thrusts at once, which is the
-  reason for a stick over two separate buttons.
-- The dead zone is 30% of the stick radius, and the stick radius is 15% of
-  the zone's shorter side. Starting values.
+- The drag *direction* is the heading the nose should point at, sent as
+  the optional `steer` field: an absolute angle in the wire's radians with
+  0 along +X. The ship turns onto it at the turn rate and rests there, so
+  a push in any direction turns the ship and holding a direction holds a
+  course.
+- The drag *distance* is the throttle. Inside the dead zone nothing is
+  sent at all; a light push steers without burning; a firm push past the
+  throttle zone also thrusts.
+- The dead zone is 30% of the stick radius, the throttle zone 55%, and the
+  radius 35% of the zone's shorter side — a thumb's throw, and enough
+  range for the distance to mean something. Starting values.
 - Release posts one final neutral intent instead of relying on the
-  freshness window, so the ship stops at once rather than coasting for
+  freshness window, so the turn stops at once rather than coasting for
   ≈267 ms.
 
-The joystick is an input device, not a new protocol: it emits the existing
-`{seq, rotate, thrust}`, which is already discrete.
+The keyboard still emits the original discrete `{seq, rotate, thrust}`, and
+the server prefers `steer` when it is present, so the joystick stays
+additive to the settled contract.
+
+The ship is turned *server-side* rather than by the client: the streamed
+heading is 150–250 ms old, so a client-side turn-toward loop against that
+lag overshoots by roughly the turn rate times the lag and hunts unless its
+deadband is wide enough to make the nose sloppy. The server has the stick
+direction and the heading in the same tick, so it turns exactly, with no
+prediction to tune and no duplicated turn rate on the client.
 
 ## Gunner: an independent turret and a fire button
 

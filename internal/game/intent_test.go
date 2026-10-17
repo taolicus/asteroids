@@ -164,6 +164,31 @@ func TestGunnerIntentIsStored(t *testing.T) {
 	}
 }
 
+// TestANewIntentReplacesTheSteer checks that a stick release — a payload
+// with no steer — clears the heading command, rather than leaving the ship
+// turning onto a direction the player has let go of. Intents are latest
+// state, so a later post replaces the whole thing.
+func TestANewIntentReplacesTheSteer(t *testing.T) {
+	steer := -2.5
+	var slot intentSlot
+	if err := applyIntent(&slot, Intent{Seq: 1, Steer: &steer, Thrust: true}, 1); err != nil {
+		t.Fatalf("steer intent: %v", err)
+	}
+	live := liveIntent(&slot, 2)
+	if live.Steer == nil || *live.Steer != steer || !live.Thrust {
+		t.Fatalf("the steer was not live: steer=%v thrust=%v", live.Steer, live.Thrust)
+	}
+
+	if err := applyIntent(&slot, Intent{Seq: 2}, 3); err != nil {
+		t.Fatalf("release intent: %v", err)
+	}
+	live = liveIntent(&slot, 4)
+	if live.Steer != nil || live.Rotate != 0 || live.Thrust {
+		t.Fatalf("the release left input live: steer=%v rotate=%d thrust=%v",
+			live.Steer, live.Rotate, live.Thrust)
+	}
+}
+
 func TestRateLimitIsPerRole(t *testing.T) {
 	sim := startSim(t)
 	for i := 0; i < maxIntentsPerSecond; i++ {

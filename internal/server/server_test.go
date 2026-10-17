@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -385,6 +386,39 @@ func TestPilotIntentMovesTheShip(t *testing.T) {
 	}
 }
 
+// TestPilotSteerReachesTheSim follows the whole path the stick direction
+// travels: a pilot's post, decoded by seat, turned into a heading by the
+// running sim, and carried back out on the snapshots every client reads.
+func TestPilotSteerReachesTheSim(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	sim := ts.sessions.Start(id)
+	pilotToken := tokenFor(t, sim, game.RolePilot, ownerToken, guestToken)
+
+	ch, cancel := sim.Subscribe()
+	defer cancel()
+	waitForPlaySim(t, ch)
+
+	const steer = -2.5 // radians, well off the spawn heading of 0
+	deadline := time.After(2 * time.Second)
+	for seq := uint64(1); ; seq++ {
+		res := postIntent(t, ts, id, pilotToken,
+			fmt.Sprintf(`{"seq":%d,"steer":%v}`, seq, steer))
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("pilot intent = %d, want 200", res.StatusCode)
+		}
+		select {
+		case snap := <-ch:
+			if math.Abs(snap.Ship.Heading-steer) < 1e-6 {
+				return // the ship turned to the posted direction
+			}
+		case <-deadline:
+			t.Fatal("the pilot's steer never turned the ship")
+		}
+	}
+}
+
 func TestGunnerSeatUsesTheGunnerShape(t *testing.T) {
 	ts := newTestServer(t)
 	id, ownerToken, guestToken := readyLobby(t, ts)
@@ -410,6 +444,10 @@ func TestGunnerSeatUsesTheGunnerShape(t *testing.T) {
 	res = postIntent(t, ts, id, gunnerToken, `{"seq":4,"rotate":1}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("gunner sending rotate = %d, want 400", res.StatusCode)
+	}
+	res = postIntent(t, ts, id, gunnerToken, `{"seq":5,"steer":0}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("gunner sending steer = %d, want 400", res.StatusCode)
 	}
 }
 
@@ -471,6 +509,7 @@ func TestIntentRejections(t *testing.T) {
 		{"empty body", id, pilotToken, ``, http.StatusBadRequest},
 		{"wrong type", id, pilotToken, `{"seq":"one","thrust":true}`, http.StatusBadRequest},
 		{"rotate out of range", id, pilotToken, `{"seq":1,"rotate":2}`, http.StatusBadRequest},
+		{"steer not a number", id, pilotToken, `{"seq":1,"steer":"left"}`, http.StatusBadRequest},
 		{"other role's field", id, pilotToken, `{"seq":1,"fire":true}`, http.StatusBadRequest},
 		{"gunner field on the pilot", id, pilotToken, `{"seq":1,"aim":1}`, http.StatusBadRequest},
 		{"lobby not ready", loneID, loneOwner, `{"seq":1,"thrust":true}`, http.StatusConflict},

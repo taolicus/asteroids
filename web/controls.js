@@ -2,9 +2,12 @@
 //
 // The scheme is settled in tasks/closed/define-touch-control-scheme.md: a
 // floating stick for the pilot, a floating aim stick and a fire button for
-// the gunner, and the same intents from a keyboard and mouse. The
-// quantization, the aim geometry, and the poster are pure, so the browser
-// suite evaluates them directly; only attach() touches the DOM.
+// the gunner, and the same intents from a keyboard and mouse. The pilot's
+// stick is point-and-go — the drag direction is the heading the nose
+// should point at, and the server turns the ship onto it — so the client
+// sends a direction rather than fighting the stream's lag to derive one.
+// The stick geometry, the aim geometry, and the poster are pure, so the
+// browser suite evaluates them directly; only attach() touches the DOM.
 //
 // Loaded as a plain script in the browser; also require()-able in Node,
 // so the helpers can be checked directly.
@@ -15,11 +18,15 @@
 })(globalThis, function () {
   "use strict";
 
-  // Starting values from the settled scheme.
+  // Starting values from the settled scheme. The radius is a fraction of
+  // the zone's shorter side, so a thumb gets the same throw in portrait
+  // and landscape; it is large enough that the pull *distance* means
+  // something, which is what makes it a throttle.
   const DEAD_ZONE = 0.3; // fraction of the stick radius
-  const STICK_RADIUS = 0.15; // fraction of the zone's shorter side
+  const THROTTLE_ZONE = 0.55; // past this the pilot also burns
+  const STICK_RADIUS = 0.35; // fraction of the zone's shorter side
 
-  // --- quantization and aim geometry ---
+  // --- stick and aim geometry ---
 
   // shortestWrapped folds a delta into [-size/2, size/2), so a direction
   // is measured to the nearest copy across the arena seam.
@@ -37,19 +44,22 @@
     return { dx: dx * k, dy: dy * k };
   }
 
-  // quantizeStick turns a drag offset into the contract's discrete pilot
-  // intent. The screen axes and the sim axes agree, so up is -y. A
-  // diagonal drag turns and thrusts at once.
-  function quantizeStick(dx, dy, radius) {
-    const t = DEAD_ZONE * radius;
-    return {
-      rotate: dx < -t ? -1 : dx > t ? 1 : 0,
-      thrust: dy < -t,
-    };
+  // stickSteer reads the pilot's floating stick. The drag direction is
+  // the heading the nose should point at, in the wire's convention (0
+  // along +X), and the drag distance is the throttle: a light push steers
+  // without spending fuel, a firm one also burns. Inside the dead zone
+  // nothing is sent at all, so a resting thumb cannot keep the ship
+  // turning.
+  function stickSteer(dx, dy, radius) {
+    const r = Math.hypot(dx, dy);
+    if (r <= DEAD_ZONE * radius) return { steer: null, thrust: false };
+    return { steer: aimFromDrag(dx, dy), thrust: r > THROTTLE_ZONE * radius };
   }
 
-  // aimFromDrag is the gunner's relative aim: the drag direction from the
-  // touch origin, in the wire's radians with 0 along +X.
+  // aimFromDrag is a direction in the wire's radians, 0 along +X, so "up"
+  // on screen is -pi/2. Both sticks read a direction this way — the
+  // gunner's aim and the pilot's steer — which is what keeps the turret
+  // and the nose in one frame of reference.
   function aimFromDrag(dx, dy) {
     return Math.atan2(dy, dx);
   }
@@ -260,9 +270,15 @@
 
     function pilotPayload() {
       const d = pilotPad.drag;
-      const s = quantizeStick(d ? d.dx : 0, d ? d.dy : 0, d ? d.radius : 1);
+      const s = d ? stickSteer(d.dx, d.dy, d.radius) : { steer: null, thrust: false };
       const k = keyIntent();
-      return { rotate: s.rotate || k.rotate, thrust: s.thrust || k.thrust };
+      const payload = { thrust: s.thrust || k.thrust };
+      // The stick names the heading to fly at; the keyboard can only pick
+      // a side. The stick wins when both are held, which is the shape the
+      // server prefers too.
+      if (s.steer !== null) payload.steer = s.steer;
+      else payload.rotate = k.rotate;
+      return payload;
     }
 
     const pilotPad = bindPad(
@@ -422,10 +438,11 @@
 
   return {
     DEAD_ZONE,
+    THROTTLE_ZONE,
     STICK_RADIUS,
     attach,
     fitStick,
-    quantizeStick,
+    stickSteer,
     aimFromDrag,
     aimAngle,
     shortestWrapped,

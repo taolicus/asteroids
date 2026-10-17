@@ -49,10 +49,13 @@ Remaining before this can close:
 
 - Run the two-device playtest that the main acceptance criteria require.
 
-The build deployed on 2026-10-17 (`0359e62`, the touch controls and the
-intent poster) is live and serving `controls.js` from the public host, so
-the playtest can start. What the playtest has to settle: the round flow and
-replay on two devices, the touch feel the controls task could not verify
+The deployed build (most recently the pilot's point-and-go stick,
+`tasks/closed/implement-point-and-go-pilot-steering.md`) is live and
+serving `controls.js` from the host, so
+the playtest can begin. What the playtest has to settle: the round flow and
+replay on two devices, the touch feel the controls tasks could not verify
 (dead zone, band reach, the fire button, no accidental zoom or page scroll),
-and the gunner's relative aim — whether "drag the direction you want to
-point" is learnable without instruction.
+the gunner's relative aim — whether "drag the direction you want to point"
+is learnable without instruction — and whether the pilot's point-and-go
+stick reads as a heading in the hand, including how far the throttle push
+has to travel.

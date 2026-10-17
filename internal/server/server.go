@@ -260,9 +260,10 @@ func decodeIntent(r io.Reader, role game.Role) (game.Intent, error) {
 	switch role {
 	case game.RolePilot:
 		var body struct {
-			Seq    uint64 `json:"seq"`
-			Rotate int    `json:"rotate"`
-			Thrust bool   `json:"thrust"`
+			Seq    uint64   `json:"seq"`
+			Rotate int      `json:"rotate"`
+			Steer  *float64 `json:"steer"`
+			Thrust bool     `json:"thrust"`
 		}
 		if err := dec.Decode(&body); err != nil {
 			return in, err
@@ -270,7 +271,7 @@ func decodeIntent(r io.Reader, role game.Role) (game.Intent, error) {
 		if body.Rotate < -1 || body.Rotate > 1 {
 			return in, fmt.Errorf("rotate %d out of range -1..1", body.Rotate)
 		}
-		in = game.Intent{Seq: body.Seq, Rotate: body.Rotate, Thrust: body.Thrust}
+		in = game.Intent{Seq: body.Seq, Rotate: body.Rotate, Steer: body.Steer, Thrust: body.Thrust}
 	case game.RoleGunner:
 		var body struct {
 			Seq  uint64   `json:"seq"`

@@ -42,17 +42,18 @@ canned snapshots (see below).
 
 The controls spec (`browser/tests/controls.spec.js`) has three halves. The
 arithmetic cases run `page.evaluate` against the page's own `Controls`
-module: the quantization (dead zone, both axes, the diagonal), the drag
-clamp, the aim from a drag, the absolute aim across the wraparound seam,
-and the poster (a change posted at once, a release skipping the coalescing
-floor, the 10 Hz tick, and a 401 stopping it). The end-to-end cases seat two
-players, drive the pads with real pointer input, and read the intent posts
-the server receives: the two roles see only their own controls, a pilot drag
-arrives as turn-and-thrust and the release as neutral, a gunner drag arrives
-as `aim` in radians and a later fire carries the remembered aim, and the
-keyboard flies the pilot. The layout cases set a phone and a landscape
-viewport and assert the arena is square, the band has its height, and the
-page does not scroll.
+module: the pilot's stick (the dead zone, the steer from a drag direction,
+and the two-stage throttle), the drag clamp, the aim from a drag, the
+absolute aim across the wraparound seam, and the poster (a change posted at
+once, a release skipping the coalescing floor, the 10 Hz tick, and a 401
+stopping it). The end-to-end cases seat two players, drive the pads with
+real pointer input, and read the intent posts the server receives: the two
+roles see only their own controls, a light pilot push arrives as `steer`
+without thrust and a firm push also thrusts, the release arrives neutral, a
+gunner drag arrives as `aim` in radians and a later fire carries the
+remembered aim, and the keyboard flies the pilot with `rotate`. The layout
+cases set a phone and a landscape viewport and assert the arena is square,
+the band has its height, and the page does not scroll.
 
 Run locally:
 

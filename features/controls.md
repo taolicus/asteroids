@@ -3,11 +3,12 @@
 Touch, keyboard, and mouse input for the two copilots, and the intent
 poster that sends what they produce. The scheme is settled in
 `tasks/closed/define-touch-control-scheme.md` and the wire contract,
-including the turret's `aim`, in `tasks/closed/define-input-intent-contract.md`.
+including the turret's `aim` and the pilot's `steer`, in
+`tasks/closed/define-input-intent-contract.md`.
 
 All of it lives in `web/controls.js`, the fourth plain script the page loads
 (`interp.js`, `renderer.js`, `controls.js`, `app.js`; no bundler). Like
-`interp.js` it is require()-able in Node, so the quantization, the aim
+`interp.js` it is require()-able in Node, so the stick geometry, the aim
 geometry, and the poster are checked without a browser.
 
 ## The band
@@ -15,14 +16,18 @@ geometry, and the poster are checked without a browser.
 One band (`#controls`) sits below the arena. It is in one player's hands at
 a time and shows only that role's controls.
 
-- **Pilot — a floating stick.** A touch anywhere in the band puts the stick
-  base under the thumb, and the base disappears on release, so one thumb
-  reaches it whatever the hand size. The drag quantizes to the settled
-  discrete intent: `rotate` is -1 left of the dead zone and +1 right of it,
-  `thrust` is on above it. The screen axes and the sim axes agree, so up is
-  -y, and a diagonal drag turns and thrusts at once. A drag past the stick
-  radius is clamped to the ring, which keeps a long drag pointing the same
-  way.
+- **Pilot — a floating stick, point-and-go.** A touch anywhere in the band
+  puts the stick base under the thumb, and the base disappears on release, so
+  one thumb reaches it whatever the hand size. The drag *direction* is the
+  heading the nose should point at, sent as the contract's optional `steer`
+  (an absolute angle, 0 along +X), so a push in any direction turns the ship
+  and holding a direction holds a course. The drag *distance* is the
+  throttle: inside the dead zone nothing is sent, a light push steers
+  without burning, and a push past the throttle zone also thrusts. `steer`
+  is a heading rather than an axis because the ship must end up *pointing*
+  where the stick does, and the ship is turned server-side (below). A drag
+  past the stick radius is clamped to the ring, which keeps a long drag
+  pointing the same way.
 - **Gunner — the same stick, aiming.** The drag direction from the touch
   origin is the aim, in the wire's radians with 0 along +X, so the turret
   reaches every angle. Inside the dead zone the remembered aim stands, so a
@@ -31,10 +36,38 @@ a time and shows only that role's controls.
 - **Gunner — a fire button.** `#fire` is pinned to the corner of the band,
   within thumb reach, and holds while pressed.
 
+The stick radius is 35% of the band's shorter side — a thumb's throw, and
+enough range for the distance to carry the throttle. The dead zone is 30% of
+that radius and the throttle zone 55%; all three are starting values. The
+radius is a fraction, not a pixel count, so the throw is the same in
+portrait and landscape; the band's own minimum height is what keeps it
+reachable on a phone.
+
 The band follows the round's roll: `app.js` reads the role off the stream
 each frame (`pilot` against its own `seat`) and hands it to `setRole()`,
 which swaps the visible controls and drops whatever the previous role was
 holding. Swapping at the round boundary therefore needs nothing else.
+
+## Why the ship is turned server-side
+
+`steer` names a heading, and the sim turns the ship toward it and stops on
+it: `turnDelta` clamps the tick's rotation to the remaining error, so the
+ship lands exactly on the stick direction instead of overshooting it and
+hunting.
+
+The obvious alternative — the client comparing the stick against the heading
+it has and posting `rotate` — was rejected. The streamed heading is 150–250 ms
+old (a 15 Hz stream plus the renderer's 100 ms interpolation delay), and a
+bang-bang turn-toward loop against that lag overshoots by roughly the turn
+rate times the lag, about 1 rad at 150 ms. Stabilising it needs either a
+deadband wide enough to make the nose sloppy or client-side prediction with
+a measured round trip and a duplicated turn rate. The server has the stick
+direction and the heading in the same tick, so it turns exactly, with no
+loop to tune.
+
+The keyboard keeps the discrete `rotate`, and the server prefers `steer`
+when a payload carries one, so the field is additive: a client that never
+steers this way behaves as it always did.
 
 ## Why the gunner's aim is relative
 
@@ -57,7 +90,8 @@ The desktop fallback emits the same intents — a second emitter, not a second
 contract:
 
 - Pilot: `ArrowLeft`/`a` and `ArrowRight`/`d` turn, `ArrowUp`/`w` thrusts.
-  Held keys are a set, so the stick and the keyboard merge by OR, and a
+  Held keys are a set, so thrust merges with the stick by OR, and the stick's
+  `steer` wins over the keys' `rotate` while it is out of its dead zone. A
   window blur clears them.
 - Gunner: space or the left mouse button fires; the mouse over the arena
   aims.

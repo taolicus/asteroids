@@ -54,6 +54,77 @@ func TestRotationUpdatesHeading(t *testing.T) {
 	}
 }
 
+func TestSteerTurnsTowardTheDirection(t *testing.T) {
+	steer := math.Pi / 2
+	sh := newShip()
+	stepShip(&sh, Intent{Steer: &steer}, dt)
+	// Straight ahead is +X, so a quarter turn clockwise is the short way.
+	want := ShipTuning.TurnRate * dt
+	if !approx(sh.Heading, want) {
+		t.Fatalf("heading after one steer tick = %v, want %v", sh.Heading, want)
+	}
+}
+
+func TestSteerRestsOnTheDirectionWithoutOvershooting(t *testing.T) {
+	steer := 2.0
+	sh := newShip()
+	sh.Heading = -1.0
+	for i := 0; i < 100; i++ {
+		stepShip(&sh, Intent{Steer: &steer}, dt)
+		if sh.Heading > steer+1e-9 {
+			t.Fatalf("steer overshot: heading %v past steer %v", sh.Heading, steer)
+		}
+	}
+	if !approx(sh.Heading, steer) {
+		t.Fatalf("heading settled at %v, want %v", sh.Heading, steer)
+	}
+
+	// Aligned is not a limit cycle: further ticks hold the heading.
+	for i := 0; i < 10; i++ {
+		stepShip(&sh, Intent{Steer: &steer}, dt)
+	}
+	if !approx(sh.Heading, steer) {
+		t.Fatalf("heading chattered off the steer: %v", sh.Heading)
+	}
+}
+
+func TestSteerTakesTheShortestWayAcrossTheSeam(t *testing.T) {
+	steer := -3.0
+	sh := newShip()
+	sh.Heading = 3.0
+	// The short way from 3.0 to -3.0 crosses ±π, so the heading must
+	// never pass through the middle of the arena's angle space.
+	for i := 0; i < 3; i++ {
+		stepShip(&sh, Intent{Steer: &steer}, dt)
+		if math.Abs(sh.Heading) < 2.5 {
+			t.Fatalf("steer took the long way round: heading %v", sh.Heading)
+		}
+	}
+	if !approx(sh.Heading, steer) {
+		t.Fatalf("heading settled at %v, want %v", sh.Heading, steer)
+	}
+}
+
+func TestSteerFoldsFarAngles(t *testing.T) {
+	steer := 7.0 // more than a full turn
+	sh := newShip()
+	for i := 0; i < 20; i++ {
+		stepShip(&sh, Intent{Steer: &steer}, dt)
+	}
+	if !approx(sh.Heading, wrapAngle(steer)) {
+		t.Fatalf("heading settled at %v, want %v", sh.Heading, wrapAngle(steer))
+	}
+}
+
+func TestSteerWinsOverTheAxis(t *testing.T) {
+	steer := 1.0
+	sh := newShip()
+	stepShip(&sh, Intent{Rotate: -1, Steer: &steer}, dt)
+	if sh.Heading <= 0 {
+		t.Fatalf("the axis beat the steer: heading %v", sh.Heading)
+	}
+}
+
 func TestHeadingWraps(t *testing.T) {
 	sh := newShip()
 	sh.Heading = math.Pi - 0.01

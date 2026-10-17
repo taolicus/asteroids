@@ -61,7 +61,7 @@ func newShip() Ship {
 // the ship only changes when something asks it to, so there is no
 // drift or jitter between ticks.
 func stepShip(sh *Ship, intent Intent, dt float64) {
-	sh.Heading = wrapAngle(sh.Heading + float64(intent.Rotate)*ShipTuning.TurnRate*dt)
+	sh.Heading = wrapAngle(sh.Heading + turnDelta(sh.Heading, intent, dt))
 
 	if intent.Thrust {
 		sh.Vel.X += math.Cos(sh.Heading) * ShipTuning.Thrust * dt
@@ -85,6 +85,23 @@ func stepShip(sh *Ship, intent Intent, dt float64) {
 
 	sh.Pos.X = wrap(sh.Pos.X + sh.Vel.X*dt)
 	sh.Pos.Y = wrap(sh.Pos.Y + sh.Vel.Y*dt)
+}
+
+// turnDelta is this tick's rotation. A pilot steering at an absolute
+// direction turns toward it by at most one tick's rotation and stops on
+// it, so the ship ends up pointing where the stick points instead of
+// overshooting past it and hunting. Without a steer the discrete axis
+// turns the ship, which is what the keyboard sends.
+func turnDelta(heading float64, intent Intent, dt float64) float64 {
+	step := ShipTuning.TurnRate * dt
+	if intent.Steer == nil {
+		return float64(intent.Rotate) * step
+	}
+	err := wrapAngle(*intent.Steer - heading)
+	if math.Abs(err) <= step {
+		return err
+	}
+	return math.Copysign(step, err)
 }
 
 // wrap folds a coordinate into [0, ArenaSize) so the arena has no edges.

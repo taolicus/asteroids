@@ -58,23 +58,29 @@ test.describe("the control arithmetic", () => {
     await page.goto("/");
   });
 
-  test("quantizes a drag into the discrete pilot intent", async ({ page }) => {
+  test("reads the pilot's stick as a heading and a throttle", async ({ page }) => {
     const out = await page.evaluate(() => ({
-      rest: Controls.quantizeStick(0, 0, 100),
-      insideDeadZone: Controls.quantizeStick(29, 0, 100),
-      turnRight: Controls.quantizeStick(31, 0, 100),
-      turnLeft: Controls.quantizeStick(-31, 0, 100),
-      thrustUp: Controls.quantizeStick(0, -31, 100),
-      downIsNotThrust: Controls.quantizeStick(0, 31, 100),
-      diagonal: Controls.quantizeStick(40, -40, 100),
+      rest: Controls.stickSteer(0, 0, 100),
+      insideDeadZone: Controls.stickSteer(29, 0, 100),
+      lightUp: Controls.stickSteer(0, -40, 100),
+      firmUp: Controls.stickSteer(0, -60, 100),
+      left: Controls.stickSteer(-60, 0, 100),
+      diagonal: Controls.stickSteer(40, -40, 100),
+      down: Controls.stickSteer(0, 60, 100),
     }));
-    expect(out.rest).toEqual({ rotate: 0, thrust: false });
-    expect(out.insideDeadZone).toEqual({ rotate: 0, thrust: false });
-    expect(out.turnRight).toEqual({ rotate: 1, thrust: false });
-    expect(out.turnLeft).toEqual({ rotate: -1, thrust: false });
-    expect(out.thrustUp).toEqual({ rotate: 0, thrust: true });
-    expect(out.downIsNotThrust).toEqual({ rotate: 0, thrust: false });
-    expect(out.diagonal).toEqual({ rotate: 1, thrust: true });
+    expect(out.rest).toEqual({ steer: null, thrust: false });
+    expect(out.insideDeadZone).toEqual({ steer: null, thrust: false });
+    // Straight up is -pi/2 in the wire's convention, whatever the ship is
+    // doing, so the steer never depends on the heading.
+    expect(out.lightUp.steer).toBeCloseTo(-Math.PI / 2, 9);
+    expect(out.lightUp.thrust).toBe(false); // a light push steers only
+    expect(out.firmUp.steer).toBeCloseTo(-Math.PI / 2, 9);
+    expect(out.firmUp.thrust).toBe(true); // a firm push also burns
+    expect(out.left.steer).toBeCloseTo(Math.PI, 9);
+    expect(out.diagonal.steer).toBeCloseTo(-Math.PI / 4, 9);
+    expect(out.diagonal.thrust).toBe(true);
+    expect(out.down.steer).toBeCloseTo(Math.PI / 2, 9);
+    expect(out.down.thrust).toBe(true);
   });
 
   test("keeps a long drag pointing the same way", async ({ page }) => {
@@ -191,7 +197,7 @@ test.describe("the control band", () => {
     await expect(roles.gunner.locator("#stick")).toBeHidden();
   });
 
-  test("the pilot's stick posts turn-and-thrust, and the release posts neutral", async ({
+  test("the pilot's stick posts a heading and a throttle, and the release posts neutral", async ({
     page,
     players,
   }) => {
@@ -202,13 +208,42 @@ test.describe("the control band", () => {
     const box = await pilot.locator("#stick").boundingBox();
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
+    // The zones are fractions of the stick radius, which is a fraction of
+    // the band's shorter side, so push by those fractions rather than by
+    // pixels that only fit one viewport.
+    const push = await pilot.evaluate(() => {
+      const r = document.getElementById("stick").getBoundingClientRect();
+      const radius = Controls.STICK_RADIUS * Math.min(r.width, r.height);
+      return {
+        light: ((Controls.DEAD_ZONE + Controls.THROTTLE_ZONE) / 2) * radius,
+        firm: ((Controls.THROTTLE_ZONE + 1) / 2) * radius,
+      };
+    });
+
+    // Straight up is -pi/2 on the wire; a light push steers without fuel.
     await pilot.mouse.move(cx, cy);
     await pilot.mouse.down();
-    await pilot.mouse.move(cx + 60, cy - 60, { steps: 4 });
+    await pilot.mouse.move(cx, cy - push.light, { steps: 2 });
     await expect
-      .poll(() => posts.some((p) => p.rotate === 1 && p.thrust === true), {
-        message: "the drag reaches the server as turn-and-thrust",
-      })
+      .poll(
+        () => {
+          const last = posts[posts.length - 1];
+          return Boolean(last) && Math.abs(last.steer + Math.PI / 2) < 1e-6 && last.thrust === false;
+        },
+        { message: "a light push reaches the server as a heading, without burning" },
+      )
+      .toBe(true);
+
+    // Pushing further is past the throttle zone, so it also burns.
+    await pilot.mouse.move(cx, cy - push.firm, { steps: 4 });
+    await expect
+      .poll(
+        () => {
+          const last = posts[posts.length - 1];
+          return Boolean(last) && Math.abs(last.steer + Math.PI / 2) < 1e-6 && last.thrust === true;
+        },
+        { message: "a firm push reaches the server as a heading and a burn" },
+      )
       .toBe(true);
 
     await pilot.mouse.up();

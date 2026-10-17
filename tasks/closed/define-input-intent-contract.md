@@ -39,10 +39,19 @@ Pilot:
 
 ```json
 {"seq": 7, "rotate": -1, "thrust": true}
+{"seq": 8, "steer": -1.5708, "thrust": true}
 ```
 
 - `seq` — client-side monotonic counter; the first post uses 1.
 - `rotate` — integer axis: -1 (counter-clockwise), 0, +1 (clockwise).
+  This is the keyboard's control.
+- `steer` — optional absolute heading in radians, `0` along +X: the
+  direction the touch stick points at. With one the ship turns toward
+  that heading and rests on it, so the stick is point-and-go (settled in
+  `define-touch-control-scheme.md`); the sim folds the value into
+  [-π, π). It wins over `rotate` when both are present. Absent, or
+  stale, means `rotate` alone, so the field is additive for a client
+  that never steers this way.
 - `thrust` — bool.
 
 Gunner:
@@ -59,8 +68,9 @@ Gunner:
   additive for a client that never aims.
 
 Decoding is strict: an unknown field, a wrong type, an empty body, or a
-`rotate` outside {-1, 0, +1} is a 400. A gunner sending `rotate` is
-therefore a 400, not a silent ignore.
+`rotate` outside {-1, 0, +1} is a 400. A gunner sending `rotate` or
+`steer` is therefore a 400, not a silent ignore, and so is a pilot
+sending `aim` or `fire`.
 
 ## Cadence, coalescing, and rate
 
@@ -93,7 +103,7 @@ this held button still held".
 | Situation | Status |
 | --- | --- |
 | Accepted, including a coalesced or dropped stale post | 200 |
-| Malformed body, unknown field, bad `rotate`, bad `aim`, or the wrong role's field | 400 |
+| Malformed body, unknown field, bad `rotate`, bad `steer`, bad `aim`, or the wrong role's field | 400 |
 | No token, or a token holding no seat in this lobby | 401 |
 | Invalid lobby ID, or a valid one whose instance has been reclaimed | 404 |
 | Lobby not ready (both players not present) | 409 |
