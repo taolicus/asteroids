@@ -4,6 +4,13 @@
   padding: 0;
 }
 
+/* The hidden attribute must beat the layout rules below, which also set
+   display on the same elements (an author `display` otherwise overrides
+   the user-agent [hidden] rule). */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;

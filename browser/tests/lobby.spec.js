@@ -40,6 +40,7 @@ test("index page is the owner's lobby, not a create screen", async ({ page }) =>
   await expect(page.locator("#lobby")).toBeVisible();
   await expect(page.locator("#seat")).toHaveText("You own this lobby.");
   await expect(page.locator("#state")).toHaveText("Waiting for your copilot to open the link.");
+  await expect(page.locator("#error")).toBeHidden();
   await shareLink(page);
 
   await expect(page.getByRole("button", { name: /create/i })).toHaveCount(0);
@@ -91,6 +92,8 @@ test("a malformed link shows a readable error", async ({ page }) => {
 
   await expect(page.locator("#error")).toBeVisible();
   await expect(page.locator("#error-message")).toHaveText("This link doesn't point to a lobby.");
+  // The lobby view must be gone, not shown behind the error.
+  await expect(page.locator("#lobby")).toBeHidden();
 });
 
 test("copy puts the share link on the clipboard", async ({ page, context }) => {
