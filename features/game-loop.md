@@ -13,21 +13,56 @@
   subscriber channel; `Subscribe` after `Stop` returns an already-closed
   channel. `Stop` on a never-started sim does not hang.
 
-`Snapshot` carries `Seq`, `Tick`, the shared `Ship`, the round's `Lives`,
-`Score`, `Survival` (seconds) and `Invuln` (seconds), plus copies of the
-asteroid and projectile slices. Round phase and replay state are still
-added by `implement-round-flow-and-replay.md`. Clients treat `Seq` as the
-ordering/gap key. The slices are copied per snapshot because snapshots are
-read on other goroutines; a snapshot never aliases live world state.
+`Snapshot` carries `Seq`, `Tick`, `Round`, `Phase`, `Pilot`, the shared
+`Ship`, the round's `Lives`, `Score`, `Survival` (seconds) and `Invuln`
+(seconds), plus copies of the asteroid and projectile slices. Clients treat
+`Seq` as the ordering/gap key. The slices are copied per snapshot because
+snapshots are read on other goroutines; a snapshot never aliases live world
+state.
+
+## Rounds and replay
+
+Round flow is `internal/game/round.go` (`roundState`); it is pure and
+clock-injected, so the whole phase machine is tested without sleeping.
+
+- A round's phases are `PhaseWaiting`, `PhasePlaying`, and `PhaseOver`.
+  The sim opens in `waiting`.
+- `waiting` is a fixed `roundStartTicks` (2 s) countdown: the roll is
+  announced, but no world exists yet, so `Snapshot.Ship` is the zero ship,
+  `Asteroids`/`Projectiles` are empty, `Lives` is `StartLives`, and
+  `Score`/`Survival` are zero. The window is a fixed duration, not gated on
+  subscriber count: gating would stall a lone player and make tests wait on
+  a second client.
+- The sim owns one `rng` for its whole life, so rounds differ and a whole
+  round sequence is still reproducible from the room's single seed. At each
+  round start the sim rolls `Pilot` (`PlayerOne` or `PlayerTwo`) and derives
+  that round's world seed from the same `rng`, then creates the world with
+  `newWorld(seed, startTick)`. Passing the play-start tick is what makes
+  round-start invulnerability and the spawn timer relative to play, not to
+  the announcement.
+- `playing` steps the world as before. At zero lives the round becomes
+  `over`: the world keeps only its existing motion and `Phase` reports it.
+- `Sim.Restart` is the replay: `over` starts a new round (announcing fresh
+  roles), `waiting` is an idempotent no-op success, and `playing` is
+  refused with `ErrRoundInProgress`. Both players share one ship and one
+  score, so either may ask for a replay.
+- `Sim.RoleOf(player)` and `Sim.Restart()` are blocking loop commands, like
+  `SubmitIntent`: the loop stays the only owner of round state, so a caller
+  never races the roll.
+- The sim is seat-agnostic: it knows `game.Player`, never a lobby seat. The
+  server binds owner → `PlayerOne` and guest → `PlayerTwo` in both
+  directions (`playerFor`/`seatFor`).
 
 ## The world
 
 One round's mutable state — ship, asteroid field, projectiles, lives,
 score, and the survival timer — lives in `internal/game/world.go`.
 
-- `newWorld(seed)` starts a round: the opening field, `StartLives` = 3,
-  and round-start invulnerability. `Sessions` gives each room its own
-  seed, so a round is reproducible from its seed while rooms differ.
+- `newWorld(seed, startTick)` starts a round: the opening field,
+  `StartLives` = 3, and round-start invulnerability timed from
+  `startTick` (the play-start tick, not the announcement). `Sessions`
+  gives each room its own seed, so a round is reproducible from its seed
+  while rooms differ.
 - `world.step(tick, pilotIn, gunnerIn, dt)` advances it one tick. It is a
   pure function of `(seed, intents, ticks)`: the same seed and the same
   intents replay exactly, which the unit tests assert.
@@ -97,10 +132,10 @@ Clients send intentions, never state; the contract is settled in
 
 - `POST /api/lobby/{id}/intent`, authenticated with the same player
   token as the lobby endpoints, which also refreshes presence.
-- The payload is role-specific and the server derives the role from the
-  seat (owner = pilot, guest = gunner until per-round role rolling
-  lands), so a client cannot claim the other role. Decoding is strict:
-  an unknown field or the other role's field is a 400.
+- The payload is role-specific, and the role is the round's roll rather
+  than the seat: the server asks the sim (`RoleOf`) which seat is flying
+  and which gunning, so a client cannot claim the other role. Decoding is
+  strict: an unknown field or the other role's field is a 400.
 - Intents are latest-state. The loop keeps one intent slot per role and
   samples it every tick; a post whose `seq` is not newer is coalesced
   away rather than erroring.
@@ -115,6 +150,23 @@ Clients send intentions, never state; the contract is settled in
   `seq` 1 is not ignored.
 - A coarse cap of `maxIntentsPerSecond` (2 × tick rate) per role returns
   429 beyond it. It bounds work, not gameplay.
+- Both intent handlers share one auth path with the replay endpoint: an
+  `authenticate` closure verifies the token, refreshes presence, and
+  requires the lobby to be ready (401/404/409) before the body is touched.
+
+## Replay
+
+`POST /api/lobby/{id}/restart` asks the room for a fresh round, using the
+same player token and readiness checks as an intent.
+
+- 200 `{"ok":true}` when the round restarts, and also for an already
+  waiting round (a second player clicking after the first's replay lands
+  is a success, not a conflict).
+- 409 while a round is playing or the sim is stopped: a live round cannot
+  be reset from under the copilots.
+- The round that starts is announced on the same stream the clients are
+  already reading, so a replay needs no new endpoint or message: the next
+  snapshots carry the new `round` and `pilot`.
 
 ## Per-room sim ownership
 
@@ -128,11 +180,10 @@ Clients send intentions, never state; the contract is settled in
   reclaimed, and its idle clock is kept fresh while it has one.
 - Stopping happens outside the registry lock, since `Sim.Stop` blocks
   until the loop exits.
-
-This lifecycle is interim: nothing owns round start yet, so a ready
-lobby's sim starts on its first accepted intent.
-`implement-round-flow-and-replay.md` will own an explicit start and
-stop, which the endpoint and payloads will not notice.
+- A round always ends at game over; nothing claims the round, so a ready
+  lobby's sim still starts on its first accepted intent or its first
+  stream subscription. Round restart is the explicit replay endpoint
+  above, not a sim start/stop.
 
 ## Snapshot stream
 
@@ -158,11 +209,13 @@ the DTO lives in `internal/server/stream.go`.
   synthetic-snapshot race. A `: ping` comment is written every 15 s when
   snapshots pause.
 - The DTO is the protocol surface, not `game.Snapshot`. It carries
-  `seq`, `tick`, `arena`, `phase`, `lives`, `score`, `time` (the survival
-  timer in seconds), `ship`, `rocks`, and `shots`. `phase` is `"playing"`
-  while lives remain and `"over"` at zero, at which point `ship` is
-  `null`; the `waiting` phase is still `implement-round-flow-and-replay.md`'s.
-  Empty `rocks`/`shots` are `[]`, never `null`.
+  `seq`, `tick`, `arena`, `phase`, `round`, `pilot`, `lives`, `score`,
+  `time` (the survival timer in seconds), `ship`, `rocks`, and `shots`.
+  `phase` is the round's `waiting`/`playing`/`over`; `round` counts the
+  room's rounds; `pilot` is the seat flying this round (the other seat
+  is the gunner). `ship` is `null` unless the phase is `playing`: there
+  is no ship before a round plays or once it is over. Empty
+  `rocks`/`shots` are `[]`, never `null`, in every phase.
 - Writes carry a deadline, so a client that stops reading is
   disconnected instead of pinning its handler. The sim's capacity-1
   mailbox already means a slow reader can never block the simulation.

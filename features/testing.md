@@ -28,15 +28,17 @@ seats, which is exactly the manual two-browser check.
 `shareLink` helper; spec files import them, and the file is not itself
 collected as a test.
 
-The renderer spec (`browser/tests/renderer.spec.js`) has two halves. The
+The renderer spec (`browser/tests/renderer.spec.js`) has three halves. The
 interpolation cases run `page.evaluate` against the page's own `Interp`
 module, so they test the shipped arithmetic (the 100 ms delay, the freeze,
 wraparound, gap/large-jump snapping, duplicate rejection, and id pairing)
 rather than a copy. The end-to-end cases play a ready lobby in two
 contexts and assert the arena and HUD appear, the survival timer advances,
-and the canvas has actually been drawn. Note that a headless browser can
-run the interpolation cases without a second player; only the end-to-end
-cases need the guest.
+the canvas has actually been drawn, and each copilot is told their rolled
+role for the round. Note that a headless browser can run the interpolation
+cases without a second player; only the end-to-end cases need the guest.
+The round screens end with a game-over case that serves the owner page
+canned snapshots (see below).
 
 Run locally:
 
@@ -56,6 +58,21 @@ report and traces are uploaded as an artifact.
 Idle-grace reclaim is deliberately Go-only. A browser test would have
 to wait out the real 60s grace, whereas the Go test advances an injected
 clock through it deterministically. Do not add a reclaim test here.
+
+The round phase machine is likewise Go-only. `internal/game/round_test.go`
+walks `waiting → playing → over → waiting` with an injected tick, so it
+asserts the phases, the roll, and the replay rules without any sleeping;
+a browser test could only wait on the same 2s announcement window, less
+deterministically.
+
+One browser test does stub the stream, and it is the deliberate exception
+worth knowing about: the game-over panel cannot be reached from a real
+round in test time (a stationary ship is only hit by chance, and controls
+do not exist yet to steer into a rock on purpose), so the round screens
+case `page.route`s `/events` and feeds the owner page canned game-over
+snapshots. Everything downstream of the stream — the panel, the stats,
+the replay POST — is the shipped code; only the data is canned. Do not use
+this pattern to test anything the real server can produce.
 
 ### Device constraint
 

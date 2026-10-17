@@ -11,13 +11,13 @@ import (
 // are as newWorld leaves them unless the test overwrites them.
 func testWorld(t *testing.T, seed int64, rocks ...Asteroid) *world {
 	t.Helper()
-	w := newWorld(seed)
+	w := newWorld(seed, 0)
 	w.rocks = rocks
 	return w
 }
 
 func TestSnapshotCarriesAsteroidsAndProjectiles(t *testing.T) {
-	w := newWorld(7)
+	w := newWorld(7, 0)
 	if len(w.rocks) != AsteroidTuning.StartCount {
 		t.Fatalf("opening field = %d rocks, want %d", len(w.rocks), AsteroidTuning.StartCount)
 	}
@@ -42,7 +42,7 @@ func TestSnapshotCarriesAsteroidsAndProjectiles(t *testing.T) {
 }
 
 func TestSnapshotDoesNotAliasTheWorld(t *testing.T) {
-	w := newWorld(7)
+	w := newWorld(7, 0)
 	w.fire(1, Intent{Fire: true})
 	snap := w.snapshot(1, 1)
 
@@ -66,7 +66,7 @@ func TestSnapshotDoesNotAliasTheWorld(t *testing.T) {
 
 func TestWorldIsDeterministicForAGivenSeed(t *testing.T) {
 	run := func(seed int64) Snapshot {
-		w := newWorld(seed)
+		w := newWorld(seed, 0)
 		for tick := uint64(1); tick <= 150; tick++ {
 			// Vary the intents so splits and shots both occur.
 			pilot := Intent{Seq: 1, Rotate: 1, Thrust: tick%3 != 0}

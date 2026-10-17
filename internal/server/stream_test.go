@@ -73,12 +73,27 @@ func lineScanner(body io.Reader) (<-chan string, func()) {
 // frame delimiters.
 func readSnapshot(t *testing.T, lines <-chan string, timeout time.Duration) snapshot {
 	t.Helper()
+	return readSnapshotWhere(t, lines, timeout, func(snapshot) bool { return true }, "a snapshot")
+}
+
+// waitForPhase reads snapshots until one reports the round phase it wants.
+// The round opens in its waiting window, so a test that needs a live
+// field waits for playing rather than counting frames.
+func waitForPhase(t *testing.T, lines <-chan string, phase string) snapshot {
+	t.Helper()
+	return readSnapshotWhere(t, lines, 5*time.Second, func(s snapshot) bool {
+		return s.Phase == phase
+	}, "a "+phase+" snapshot")
+}
+
+func readSnapshotWhere(t *testing.T, lines <-chan string, timeout time.Duration, want func(snapshot) bool, what string) snapshot {
+	t.Helper()
 	deadline := time.After(timeout)
 	for {
 		select {
 		case line, ok := <-lines:
 			if !ok {
-				t.Fatal("stream closed before a snapshot")
+				t.Fatal("stream closed before " + what)
 			}
 			data, ok := strings.CutPrefix(line, "data: ")
 			if !ok {
@@ -88,9 +103,12 @@ func readSnapshot(t *testing.T, lines <-chan string, timeout time.Duration) snap
 			if err := json.Unmarshal([]byte(data), &s); err != nil {
 				t.Fatalf("decode snapshot %q: %v", data, err)
 			}
-			return s
+			if want(s) {
+				return s
+			}
 		case <-deadline:
-			t.Fatal("no snapshot within the deadline")
+			t.Fatal("no " + what + " within the deadline")
+			return snapshot{}
 		}
 	}
 }
@@ -126,30 +144,54 @@ func TestEventsStreamsOrderedSnapshots(t *testing.T) {
 	lines, stop := lineScanner(res.Body)
 	defer stop()
 
+	// The sim starts in its opening window: the roll is announced and
+	// the field does not exist yet.
 	first := readSnapshot(t, lines, time.Second)
 	if first.Arena != game.ArenaSize {
 		t.Fatalf("arena = %v, want %v", first.Arena, game.ArenaSize)
 	}
-	if first.Phase != phasePlaying {
-		t.Fatalf("phase = %q, want %q", first.Phase, phasePlaying)
+	if first.Phase != string(game.PhaseWaiting) {
+		t.Fatalf("phase = %q, want %q", first.Phase, game.PhaseWaiting)
+	}
+	if first.Round != 1 {
+		t.Fatalf("round = %d, want 1", first.Round)
+	}
+	if first.Pilot != rooms.SeatOwner && first.Pilot != rooms.SeatGuest {
+		t.Fatalf("pilot = %q, want a seat", first.Pilot)
 	}
 	if first.Lives != game.StartLives || first.Score != 0 {
 		t.Fatalf("lives/score = %d/%d, want %d/0", first.Lives, first.Score, game.StartLives)
 	}
-	if first.Ship == nil {
-		t.Fatal("no ship in the opening snapshot")
+	if first.Ship != nil {
+		t.Fatal("a ship exists before the round plays")
 	}
-	if len(first.Rocks) != game.AsteroidTuning.StartCount {
-		t.Fatalf("rocks = %d, want %d", len(first.Rocks), game.AsteroidTuning.StartCount)
-	}
-	if got := first.Rocks[0].Radius; got != game.TierLarge.Radius() {
-		t.Fatalf("rock radius = %v, want %v", got, game.TierLarge.Radius())
+	if len(first.Rocks) != 0 {
+		t.Fatalf("the field exists before the round plays: %d rocks", len(first.Rocks))
 	}
 	if first.Seq == 0 || first.Tick != first.Seq*game.BroadcastEvery {
 		t.Fatalf("first snapshot seq/tick = %d/%d", first.Seq, first.Tick)
 	}
 
-	prev := first.Seq
+	// After the announcement window the round plays: the field and the
+	// ship appear.
+	playing := waitForPhase(t, lines, string(game.PhasePlaying))
+	if playing.Round != 1 {
+		t.Fatalf("playing round = %d, want 1", playing.Round)
+	}
+	if playing.Pilot != first.Pilot {
+		t.Fatalf("pilot changed between phases: %q then %q", first.Pilot, playing.Pilot)
+	}
+	if playing.Ship == nil {
+		t.Fatal("no ship once the round plays")
+	}
+	if len(playing.Rocks) != game.AsteroidTuning.StartCount {
+		t.Fatalf("rocks = %d, want %d", len(playing.Rocks), game.AsteroidTuning.StartCount)
+	}
+	if got := playing.Rocks[0].Radius; got != game.TierLarge.Radius() {
+		t.Fatalf("rock radius = %v, want %v", got, game.TierLarge.Radius())
+	}
+
+	prev := playing.Seq
 	for i := 0; i < 3; i++ {
 		s := readSnapshot(t, lines, time.Second)
 		if s.Seq <= prev {
@@ -165,6 +207,9 @@ func TestSnapshotForMapsTheRoundState(t *testing.T) {
 	over := snapshotFor(game.Snapshot{
 		Seq:         8,
 		Tick:        16,
+		Round:       3,
+		Phase:       game.PhaseOver,
+		Pilot:       game.PlayerTwo,
 		Lives:       0,
 		Score:       250,
 		Survival:    12.5,
@@ -172,8 +217,11 @@ func TestSnapshotForMapsTheRoundState(t *testing.T) {
 		Asteroids:   []game.Asteroid{{ID: 4, Tier: game.TierMedium, Pos: game.Vec2{X: 10, Y: 20}}},
 		Projectiles: []game.Projectile{{ID: 5, Pos: game.Vec2{X: 30, Y: 40}}},
 	})
-	if over.Phase != phaseOver {
-		t.Fatalf("phase = %q, want %q", over.Phase, phaseOver)
+	if over.Phase != string(game.PhaseOver) {
+		t.Fatalf("phase = %q, want %q", over.Phase, game.PhaseOver)
+	}
+	if over.Round != 3 || over.Pilot != rooms.SeatGuest {
+		t.Fatalf("round/pilot = %d/%q, want 3/%q", over.Round, over.Pilot, rooms.SeatGuest)
 	}
 	if over.Ship != nil {
 		t.Fatalf("ship = %+v, want nil once the round is over", over.Ship)
@@ -188,15 +236,36 @@ func TestSnapshotForMapsTheRoundState(t *testing.T) {
 		t.Fatalf("shots = %+v", over.Shots)
 	}
 
-	playing := snapshotFor(game.Snapshot{Seq: 1, Tick: 2, Lives: game.StartLives, Invuln: 1.5})
-	if playing.Phase != phasePlaying || playing.Ship == nil {
+	playing := snapshotFor(game.Snapshot{
+		Seq: 1, Tick: 2, Round: 4, Phase: game.PhasePlaying, Pilot: game.PlayerOne,
+		Lives: game.StartLives, Invuln: 1.5,
+	})
+	if playing.Phase != string(game.PhasePlaying) || playing.Ship == nil {
 		t.Fatalf("playing phase/ship = %q/%v", playing.Phase, playing.Ship)
+	}
+	if playing.Round != 4 || playing.Pilot != rooms.SeatOwner {
+		t.Fatalf("round/pilot = %d/%q, want 4/%q", playing.Round, playing.Pilot, rooms.SeatOwner)
 	}
 	if playing.Ship.Invuln != 1.5 {
 		t.Fatalf("invuln = %v, want 1.5", playing.Ship.Invuln)
 	}
 	// Empty arrays, not null: the renderer iterates them unconditionally.
 	if playing.Rocks == nil || playing.Shots == nil {
+		t.Fatal("empty rock/shot arrays must be present, not null")
+	}
+
+	// Waiting announces the roll before the field exists.
+	waiting := snapshotFor(game.Snapshot{
+		Seq: 1, Tick: 2, Round: 5, Phase: game.PhaseWaiting, Pilot: game.PlayerTwo,
+		Lives: game.StartLives,
+	})
+	if waiting.Phase != string(game.PhaseWaiting) || waiting.Ship != nil {
+		t.Fatalf("waiting phase/ship = %q/%v", waiting.Phase, waiting.Ship)
+	}
+	if waiting.Round != 5 || waiting.Pilot != rooms.SeatGuest {
+		t.Fatalf("waiting round/pilot = %d/%q", waiting.Round, waiting.Pilot)
+	}
+	if waiting.Rocks == nil || waiting.Shots == nil {
 		t.Fatal("empty rock/shot arrays must be present, not null")
 	}
 }

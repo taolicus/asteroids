@@ -100,6 +100,8 @@
       tick: base.tick,
       arena: size,
       phase: base.phase,
+      round: base.round,
+      pilot: base.pilot,
       lives: base.lives,
       score: base.score,
       time: base.time,

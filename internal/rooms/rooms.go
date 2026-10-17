@@ -22,8 +22,9 @@ import (
 	"time"
 )
 
-// Seat is the seat a player holds in a lobby. It is not a role: roles
-// are rolled at each round start (implement-round-flow-and-replay.md).
+// Seat is the seat a player holds in a lobby. It is not a role: roles are
+// rolled at each round start by the simulation, and the server binds the
+// owner seat to the first player and the guest to the second.
 type Seat string
 
 const (

@@ -136,7 +136,7 @@ async function openLobby(lobbyId) {
   }
   session = {
     lobbyId,
-    owner: data.seat === "owner",
+    seat: data.seat,
     token: data.seat === "owner" ? me.token : data.token || credential,
     path: data.path,
   };
@@ -189,6 +189,7 @@ function startGame() {
 
   $("arena").hidden = false;
   $("hud").hidden = false;
+  $("round").hidden = true;
   resize();
 
   game = {
@@ -216,6 +217,7 @@ function stopGame() {
   game = null;
   $("arena").hidden = true;
   $("hud").hidden = true;
+  $("round").hidden = true;
 }
 
 function frame(now) {
@@ -234,6 +236,40 @@ function updateHud(view) {
   setText($("hud-score"), String(view.score));
   setText($("hud-time"), view.time.toFixed(1));
   setText($("hud-lives"), String(Math.max(0, view.lives)));
+  setText($("hud-role"), roleName(view));
+  updateRoundPanel(view);
+}
+
+// roleName is this player's controls. The server rolls which seat pilots
+// each round and sends the roll on the shared stream; our own seat is
+// ours, so each client reads its own role off shared state.
+function roleName(view) {
+  if (!session || !view.pilot) return "";
+  return view.pilot === session.seat ? "Pilot" : "Gunner";
+}
+
+// updateRoundPanel shows the two moments a round pauses for its players:
+// the announcement that opens it, and the game-over screen that ends it.
+// The final score and survival timer freeze when the round ends, so they
+// are still correct while the screen is up.
+function updateRoundPanel(view) {
+  const paused = view.phase === "waiting" || view.phase === "over";
+  $("round").hidden = !paused;
+  if (!paused) return;
+
+  const role = roleName(view);
+  if (view.phase === "waiting") {
+    setText($("round-title"),
+      role ? `Get ready — you're the ${role.toLowerCase()}` : "Get ready");
+    $("round-stats").hidden = true;
+    $("play-again").hidden = true;
+    return;
+  }
+  setText($("round-title"), "Game over");
+  setText($("round-stats"),
+    `Round ${view.round} · Score ${view.score} · Survived ${view.time.toFixed(1)}s`);
+  $("round-stats").hidden = false;
+  $("play-again").hidden = false;
 }
 
 function setText(el, text) {
@@ -417,5 +453,22 @@ $("copy").addEventListener("click", async () => {
 });
 
 $("retry").addEventListener("click", () => location.reload());
+
+// --- round flow ---
+
+// play-again asks the server for a fresh round. A 409 means the copilot
+// already restarted (or play is still under way); the stream shows the
+// round that actually exists either way.
+$("play-again").addEventListener("click", async () => {
+  if (!game) return;
+  try {
+    await fetchJSON(`${API}/lobby/${encodeURIComponent(game.lobbyId)}/restart`, {
+      method: "POST",
+      headers: game.token ? { "X-Player-Token": game.token } : {},
+    });
+  } catch {
+    // No action: the snapshot stream is the authority on the round.
+  }
+});
 
 start();

@@ -62,7 +62,43 @@ func TestSnapshotSequenceAndTick(t *testing.T) {
 		if snap.Tick != snap.Seq*BroadcastEvery {
 			t.Fatalf("tick %d does not match sequence %d", snap.Tick, snap.Seq)
 		}
+		if i == 0 && (snap.Round != 1 || snap.Phase != PhaseWaiting) {
+			t.Fatalf("first snapshot round/phase = %d/%q, want 1/%q",
+				snap.Round, snap.Phase, PhaseWaiting)
+		}
 		prevSeq = snap.Seq
+	}
+}
+
+// TestRoleOfReportsOppositeRoles checks the roll reaches the server's
+// intent path: the two players always hold different roles.
+func TestRoleOfReportsOppositeRoles(t *testing.T) {
+	sim := startSim(t)
+
+	one, err := sim.RoleOf(PlayerOne)
+	if err != nil {
+		t.Fatalf("RoleOf(player one) = %v", err)
+	}
+	two, err := sim.RoleOf(PlayerTwo)
+	if err != nil {
+		t.Fatalf("RoleOf(player two) = %v", err)
+	}
+	if one == two {
+		t.Fatalf("both players hold %q", one)
+	}
+	for _, role := range []Role{one, two} {
+		if role != RolePilot && role != RoleGunner {
+			t.Fatalf("role = %q, want pilot or gunner", role)
+		}
+	}
+}
+
+// TestRestartDuringTheOpeningWindowIsANoOp checks the replay path's
+// idempotence: the round about to start is already fresh.
+func TestRestartDuringTheOpeningWindowIsANoOp(t *testing.T) {
+	sim := startSim(t)
+	if err := sim.Restart(); err != nil {
+		t.Fatalf("Restart in the opening window = %v, want nil", err)
 	}
 }
 

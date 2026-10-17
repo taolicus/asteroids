@@ -31,8 +31,9 @@ is no bundler or build step. `web/web.go` embeds all of them.
 - Entities are paired by `id`, with the newer snapshot as the base, so a
   destroyed rock or expired shot disappears promptly and a new one appears
   at its spawn position.
-- The HUD fields (`lives`, `score`, `time`) come from the newer snapshot
-  regardless of `t`: they change discretely and should be current.
+- The HUD and round fields (`lives`, `score`, `time`, `round`, `pilot`,
+  `phase`) come from the newer snapshot regardless of `t`: they change
+  discretely and should be current.
 
 The reminder that `seq` restarts at 1 on a reclaimed lobby is why the
 buffer is per connection: `app.js` builds a fresh `SnapshotBuffer` every
@@ -52,10 +53,31 @@ time the stream connects, which resets the `seq` watermark.
   ship is a filled triangle rotated to its heading, blinking to a lower
   alpha while `invuln > 0`.
 - The HUD is DOM (`#hud`), not canvas, so it stays crisp and testable:
-  score, survival seconds, and lives.
+  score, survival seconds, lives, and the player's role for this round.
+
+## Round screens
 
 The lobby panel stays visible while playing; the arena and HUD are
 unhidden when the round starts and hidden again on exit.
+
+Roles are rolled per round, so each player is told theirs rather than
+assuming one: `app.js` compares the stream's `pilot` with the session's
+own `seat` (the two roles are always opposite, since there is exactly one
+pilot). That is the whole client-side rule — no extra request.
+
+Two moments pause the round for its players (`#round`):
+
+- `waiting`: "Get ready — you're the pilot/gunner", using the same roll.
+- `over`: "Game over" with the final round number, score, and survival
+  time, plus a "Play again" button that POSTs `/restart`. The panel is
+  drawn from the same frozen snapshot, so the score and timer are the
+  round's final values.
+
+Nothing needs an interpolation-buffer reset at a round boundary: a
+`waiting` snapshot has no ship and no rocks, and the new round's first
+`playing` snapshot snaps in (the ship is absent in the older snapshot, so
+it is drawn from the newer). The stream keeps running across a replay —
+the next snapshots simply carry the new `round` and `pilot`.
 
 ## Stream and reconnection
 

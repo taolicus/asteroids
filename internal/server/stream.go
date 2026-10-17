@@ -38,14 +38,6 @@ var defaultStreamTimings = streamTimings{
 	writeTimeout: 15 * time.Second,
 }
 
-// phasePlaying is the round phase while there are lives left, and
-// phaseOver once the sim reports zero. Waiting is still round flow's to
-// report (implement-round-flow-and-replay.md).
-const (
-	phasePlaying = "playing"
-	phaseOver    = "over"
-)
-
 // heartbeatFrame is an SSE comment: it is ignored by parsers but keeps
 // the connection warm.
 const heartbeatFrame = ": ping\n\n"
@@ -58,9 +50,14 @@ type snapshot struct {
 	Seq   uint64  `json:"seq"`
 	Tick  uint64  `json:"tick"`
 	Arena float64 `json:"arena"`
-	Phase string  `json:"phase"`
-	Lives int     `json:"lives"`
-	Score int     `json:"score"`
+	// Phase is the round's phase: waiting, playing, or over.
+	Phase string `json:"phase"`
+	// Round counts rounds since the room's sim started.
+	Round uint64 `json:"round"`
+	// Pilot is the seat flying this round; the other seat is the gunner.
+	Pilot rooms.Seat `json:"pilot"`
+	Lives int        `json:"lives"`
+	Score int        `json:"score"`
 	// Time is the survival timer in seconds.
 	Time  float64     `json:"time"`
 	Ship  *shipState  `json:"ship"`
@@ -89,23 +86,23 @@ type shotState struct {
 }
 
 // snapshotFor maps the sim's current state to the wire schema. The ship
-// and the phase both follow the life count: there is no ship once the
-// round is over.
+// follows the phase: there is no ship before a round plays or once it is
+// over.
 func snapshotFor(snap game.Snapshot) snapshot {
 	s := snapshot{
 		Seq:   snap.Seq,
 		Tick:  snap.Tick,
 		Arena: game.ArenaSize,
-		Phase: phasePlaying,
+		Phase: string(snap.Phase),
+		Round: snap.Round,
+		Pilot: seatFor(snap.Pilot),
 		Lives: snap.Lives,
 		Score: snap.Score,
 		Time:  snap.Survival,
 		Rocks: make([]rockState, 0, len(snap.Asteroids)),
 		Shots: make([]shotState, 0, len(snap.Projectiles)),
 	}
-	if snap.Lives <= 0 {
-		s.Phase = phaseOver
-	} else {
+	if snap.Phase == game.PhasePlaying {
 		s.Ship = &shipState{
 			X:       snap.Ship.Pos.X,
 			Y:       snap.Ship.Pos.Y,

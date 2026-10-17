@@ -21,10 +21,27 @@ func nextSnapshot(t *testing.T, ch <-chan Snapshot) Snapshot {
 	}
 }
 
+// waitForPlay drains snapshots until the round's opening window closes
+// and returns the first playing snapshot. Intents only reach the field
+// once play begins, so a test that watches the ship must wait for it.
+func waitForPlay(t *testing.T, ch <-chan Snapshot) Snapshot {
+	t.Helper()
+	for i := 0; i < 4*TickRate; i++ {
+		snap := nextSnapshot(t, ch)
+		if snap.Phase == PhasePlaying {
+			return snap
+		}
+	}
+	t.Fatal("round never began playing")
+	return Snapshot{}
+}
+
 func TestIntentReachesSnapshots(t *testing.T) {
 	sim := startSim(t)
 	ch, cancel := sim.Subscribe()
 	defer cancel()
+
+	waitForPlay(t, ch)
 
 	if err := sim.SubmitIntent(RolePilot, Intent{Seq: 1, Thrust: true}); err != nil {
 		t.Fatalf("SubmitIntent: %v", err)
@@ -43,6 +60,8 @@ func TestStaleIntentStopsThrust(t *testing.T) {
 	sim := startSim(t)
 	ch, cancel := sim.Subscribe()
 	defer cancel()
+
+	waitForPlay(t, ch)
 
 	if err := sim.SubmitIntent(RolePilot, Intent{Seq: 1, Thrust: true}); err != nil {
 		t.Fatalf("SubmitIntent: %v", err)
@@ -83,6 +102,10 @@ func TestDuplicateSequenceIsCoalesced(t *testing.T) {
 
 func TestReloadResetsSequenceWatermark(t *testing.T) {
 	sim := startSim(t)
+	ch, cancel := sim.Subscribe()
+	defer cancel()
+	waitForPlay(t, ch)
+
 	if err := sim.SubmitIntent(RolePilot, Intent{Seq: 100}); err != nil {
 		t.Fatalf("SubmitIntent: %v", err)
 	}
@@ -94,8 +117,6 @@ func TestReloadResetsSequenceWatermark(t *testing.T) {
 		t.Fatalf("post-gap SubmitIntent: %v", err)
 	}
 
-	ch, cancel := sim.Subscribe()
-	defer cancel()
 	for i := 0; i < 20; i++ {
 		if snap := nextSnapshot(t, ch); snap.Ship.Vel.X != 0 || snap.Ship.Vel.Y != 0 {
 			return // the restarted client's intent took effect

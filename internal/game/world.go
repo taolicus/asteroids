@@ -42,14 +42,16 @@ type world struct {
 }
 
 // newWorld starts a fresh round from seed: the opening asteroid field,
-// full lives, and round-start invulnerability.
-func newWorld(seed int64) *world {
+// full lives, and round-start invulnerability. The round begins at
+// startTick, so its invulnerability and first spawn are timed from when
+// play begins rather than from the sim's start.
+func newWorld(seed int64, startTick uint64) *world {
 	w := &world{
 		rng:         rand.New(rand.NewSource(seed)),
 		ship:        newShip(),
 		lives:       StartLives,
-		invulnUntil: respawnInvulnTicks,
-		spawnAt:     spawnIntervalTicks,
+		invulnUntil: startTick + respawnInvulnTicks,
+		spawnAt:     startTick + spawnIntervalTicks,
 		nextRockID:  1,
 		nextShotID:  1,
 	}

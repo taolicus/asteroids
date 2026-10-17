@@ -14,6 +14,8 @@ function snapshot(overrides = {}) {
     tick: 1,
     arena: 1000,
     phase: "playing",
+    round: 1,
+    pilot: "owner",
     lives: 3,
     score: 0,
     time: 0,
@@ -182,5 +184,88 @@ test.describe("the shared arena", () => {
       return n;
     });
     expect(drawn).toBeGreaterThan(100);
+  });
+
+  test("each copilot is told their role before the round starts", async ({ page, players }) => {
+    await page.goto("/");
+    const link = await shareLink(page);
+
+    const guest = await players();
+    await guest.page.goto(link);
+
+    // The guest enters the lobby and opens the first stream, so its round
+    // opens in the announcement window, role and all.
+    await expect(guest.page.locator("#round-title")).toBeVisible();
+    await expect(guest.page.locator("#round-title")).toContainText("you're the");
+
+    // The roll rides the shared snapshot; each page reads it against its
+    // own seat, so the copilots are told opposite roles.
+    await expect(page.locator("#hud-role")).toHaveText(/^(Pilot|Gunner)$/);
+    await expect(guest.page.locator("#hud-role")).toHaveText(/^(Pilot|Gunner)$/);
+    const ownerRole = await page.locator("#hud-role").textContent();
+    const guestRole = await guest.page.locator("#hud-role").textContent();
+    expect(ownerRole).not.toBe(guestRole);
+  });
+});
+
+// The round screens end a round, and a real round cannot be driven to game
+// over quickly: a stationary ship at the centre is only hit by chance as
+// rocks drift past. This block therefore feeds the owner's page the
+// snapshots the server would send at game over and drives the shipped
+// panel code directly. Everything downstream of the stream is real.
+test.describe("the round screens", () => {
+  // overFrame is one game-over snapshot as the wire schema encodes it.
+  function overFrame(seq) {
+    return (
+      `event: snapshot\nid: ${seq}\ndata: ` +
+      JSON.stringify({
+        seq,
+        tick: seq * 2,
+        arena: 1000,
+        phase: "over",
+        round: 3,
+        pilot: "owner",
+        lives: 0,
+        score: 420,
+        time: 61.5,
+        ship: null,
+        rocks: [{ id: 1, x: 100, y: 100, radius: 24 }],
+        shots: [],
+      }) +
+      "\n\n"
+    );
+  }
+
+  test("game over shows the final score and offers a replay", async ({ page, players }) => {
+    await page.goto("/");
+    const link = await shareLink(page);
+
+    // Serve the owner canned snapshots instead of its real stream, so the
+    // page lands on game over without waiting out a real round.
+    await page.route("**/events", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: overFrame(1) + overFrame(2) + overFrame(3),
+      }),
+    );
+
+    // A ready lobby is what opens the stream in the first place.
+    const guest = await players();
+    await guest.page.goto(link);
+
+    await expect(page.locator("#round-title")).toHaveText("Game over");
+    await expect(page.locator("#round-stats")).toContainText("Round 3");
+    await expect(page.locator("#round-stats")).toContainText("Score 420");
+    await expect(page.locator("#round-stats")).toContainText("61.5s");
+    await expect(page.locator("#hud-role")).toHaveText("Pilot");
+    await expect(page.locator("#play-again")).toBeVisible();
+
+    // Play again asks the server for a fresh round.
+    const [request] = await Promise.all([
+      page.waitForRequest((r) => r.method() === "POST" && r.url().includes("/restart")),
+      page.locator("#play-again").click(),
+    ]);
+    expect(request).toBeTruthy();
   });
 });

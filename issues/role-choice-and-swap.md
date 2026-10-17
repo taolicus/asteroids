@@ -24,7 +24,7 @@ does not design itself into a corner.
 
 ## Affects
 
-- `tasks/open/implement-round-flow-and-replay.md` — role roll at round
-  start.
+- `tasks/closed/implement-round-flow-and-replay.md` — the per-round
+  pilot/gunner roll is implemented there; a swap would override it.
 - `tasks/closed/player-owned-lobby-rooms.md` — seats vs roles.
 - The lobby UI in `web/`.

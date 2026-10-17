@@ -3,6 +3,7 @@ package game
 
 import (
 	"errors"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,13 +27,18 @@ const intentTTLTicks = 8
 // because the loop only samples the latest intent.
 const maxIntentsPerSecond = 2 * TickRate
 
-// Snapshot is one immutable view of room state produced by the loop.
-// Later tasks add round-phase fields; the shared score, lives, and
-// survival timer are already here. Slices are value copies, safe to read
+// Snapshot is one immutable view of room state produced by the loop. It
+// carries the round's number, phase, and role roll alongside the shared
+// score, lives, and survival timer. Slices are value copies, safe to read
 // from another goroutine.
 type Snapshot struct {
-	Seq         uint64
-	Tick        uint64
+	Seq   uint64
+	Tick  uint64
+	Round uint64
+	Phase Phase
+	// Pilot is the player holding the pilot's controls this round; the
+	// other player is the gunner.
+	Pilot       Player
 	Ship        Ship
 	Lives       int
 	Score       int
@@ -85,6 +91,15 @@ type intentReq struct {
 	reply chan error
 }
 
+type roleReq struct {
+	player Player
+	reply  chan Role
+}
+
+type restartReq struct {
+	reply chan error
+}
+
 // NewSim creates a stopped sim seeded with seed. The seed makes the
 // round's asteroid field and split directions reproducible. Call Run to
 // start the loop.
@@ -112,7 +127,8 @@ func (s *Sim) Run() {
 
 	var tick uint64
 	var seq uint64
-	w := newWorld(s.seed)
+	r := newRoundState(rand.New(rand.NewSource(s.seed)))
+	r.startRound(0)
 	var pilot, gunner intentSlot
 	subscribers := make(map[chan Snapshot]struct{})
 
@@ -137,21 +153,34 @@ func (s *Sim) Run() {
 				}
 			case intentReq:
 				c.reply <- applyIntent(slotFor(&pilot, &gunner, c.role), c.in, tick)
+			case roleReq:
+				c.reply <- roleOf(c.player, r.pilot)
+			case restartReq:
+				c.reply <- r.restart(tick)
 			}
 		case <-ticker.C:
 			tick++
 			s.ticks.Store(tick)
-			w.step(tick, liveIntent(&pilot, tick), liveIntent(&gunner, tick), 1.0/TickRate)
+			r.step(tick, liveIntent(&pilot, tick), liveIntent(&gunner, tick), 1.0/TickRate)
 			if tick%BroadcastEvery != 0 {
 				continue
 			}
 			seq++
-			snap := w.snapshot(seq, tick)
+			snap := r.snapshot(seq, tick)
 			for ch := range subscribers {
 				trySendLatest(ch, snap)
 			}
 		}
 	}
+}
+
+// roleOf returns the role a player holds while pilot is the round's
+// pilot.
+func roleOf(player, pilot Player) Role {
+	if player == pilot {
+		return RolePilot
+	}
+	return RoleGunner
 }
 
 // slotFor returns the intent slot for role, or nil if the role is
@@ -267,6 +296,44 @@ func (s *Sim) SubmitIntent(role Role, in Intent) error {
 	reply := make(chan error, 1)
 	select {
 	case s.cmds <- intentReq{role: role, in: in, reply: reply}:
+	case <-s.done:
+		return ErrStopped
+	}
+	select {
+	case err := <-reply:
+		return err
+	case <-s.done:
+		return ErrStopped
+	}
+}
+
+// RoleOf reports the role player holds in the current round. It blocks
+// until the loop has answered, so a caller cannot decode an intent for a
+// role that a round boundary has already changed.
+func (s *Sim) RoleOf(player Player) (Role, error) {
+	reply := make(chan Role, 1)
+	select {
+	case s.cmds <- roleReq{player: player, reply: reply}:
+	case <-s.done:
+		return "", ErrStopped
+	}
+	select {
+	case role := <-reply:
+		return role, nil
+	case <-s.done:
+		return "", ErrStopped
+	}
+}
+
+// Restart begins a fresh round after game over, rolling its roles and
+// opening its waiting window. It is a no-op while the next round is
+// already waiting for its own start, and ErrRoundInProgress while a round
+// is still playing. Like SubmitIntent it waits for the loop, so it can
+// report the outcome.
+func (s *Sim) Restart() error {
+	reply := make(chan error, 1)
+	select {
+	case s.cmds <- restartReq{reply: reply}:
 	case <-s.done:
 		return ErrStopped
 	}

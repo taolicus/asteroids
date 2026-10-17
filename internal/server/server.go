@@ -48,6 +48,10 @@ type intentResponse struct {
 	Seq  uint64 `json:"seq"`
 }
 
+type restartResponse struct {
+	OK bool `json:"ok"`
+}
+
 // Handler returns the API routes. The caller mounts it under "/api/"
 // alongside the static frontend; paths here are full request paths
 // because ServeMux does not strip the mount point.
@@ -119,20 +123,25 @@ func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.S
 		writeJSON(w, http.StatusOK, lobbyPayload(id, st, ""))
 	})
 
-	mux.HandleFunc("POST /api/lobby/{id}/intent", func(w http.ResponseWriter, r *http.Request) {
+	// authenticate verifies the caller's player token, refreshes
+	// presence, and requires a ready lobby, exactly as the lobby
+	// endpoints do. It writes the rejection itself under the given label
+	// and reports ok=false, so a handler can return as soon as it does
+	// not.
+	authenticate := func(w http.ResponseWriter, r *http.Request, what string) (rooms.Status, bool) {
 		id := r.PathValue("id")
 		if !identity.ValidID(id) {
 			httpError(w, http.StatusNotFound, rooms.ErrNotFound)
-			return
+			return rooms.Status{}, false
 		}
 
 		// The call authenticates and refreshes presence, exactly like a
 		// lobby poll. Status also reports whether both seats are filled.
 		token := r.Header.Get(playerTokenHeader)
 		if token == "" {
-			log.Printf("intent %s rejected: no player token", id)
+			log.Printf("%s %s rejected: no player token", what, id)
 			httpError(w, http.StatusUnauthorized, rooms.ErrUnauthorized)
-			return
+			return rooms.Status{}, false
 		}
 		asOwner := isOwner(iss, id, token)
 		st, err := m.Status(id, token, asOwner)
@@ -141,21 +150,35 @@ func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.S
 			case errors.Is(err, rooms.ErrNotFound):
 				httpError(w, http.StatusNotFound, err)
 			case errors.Is(err, rooms.ErrUnauthorized):
-				log.Printf("intent %s rejected: unknown player token", id)
+				log.Printf("%s %s rejected: unknown player token", what, id)
 				httpError(w, http.StatusUnauthorized, err)
 			default:
 				httpError(w, http.StatusInternalServerError, err)
 			}
-			return
+			return rooms.Status{}, false
 		}
 		if st.State != rooms.StateReady {
 			httpError(w, http.StatusConflict, errLobbyNotReady)
+			return rooms.Status{}, false
+		}
+		return st, true
+	}
+
+	mux.HandleFunc("POST /api/lobby/{id}/intent", func(w http.ResponseWriter, r *http.Request) {
+		st, ok := authenticate(w, r, "intent")
+		if !ok {
 			return
 		}
+		id := r.PathValue("id")
 
-		role := game.RolePilot
-		if st.Seat == rooms.SeatGuest {
-			role = game.RoleGunner
+		// Which controls this player holds is rolled per round, so ask
+		// the sim before decoding the body against a role's shape.
+		sim := sessions.Start(id)
+		role, err := sim.RoleOf(playerFor(st.Seat))
+		if err != nil {
+			// Before decoding, the only failure left is the stopped loop.
+			httpError(w, http.StatusConflict, err)
+			return
 		}
 
 		if r.ContentLength > maxIntentBytes {
@@ -176,7 +199,7 @@ func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.S
 			return
 		}
 
-		if err := sessions.Start(id).SubmitIntent(role, in); err != nil {
+		if err := sim.SubmitIntent(role, in); err != nil {
 			switch {
 			case errors.Is(err, game.ErrRateLimited):
 				log.Printf("intent %s/%s rejected: %v", id, role, err)
@@ -189,6 +212,27 @@ func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.S
 			return
 		}
 		writeJSON(w, http.StatusOK, intentResponse{Role: string(role), Seq: in.Seq})
+	})
+
+	// restart asks the sim for a fresh round after game over. Either
+	// player may ask: the room shares one ship and one score, so a replay
+	// is a joint decision and the sim announces the new round's roles on
+	// the stream.
+	mux.HandleFunc("POST /api/lobby/{id}/restart", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := authenticate(w, r, "restart"); !ok {
+			return
+		}
+		id := r.PathValue("id")
+		if err := sessions.Start(id).Restart(); err != nil {
+			switch {
+			case errors.Is(err, game.ErrRoundInProgress), errors.Is(err, game.ErrStopped):
+				httpError(w, http.StatusConflict, err)
+			default:
+				httpError(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, restartResponse{OK: true})
 	})
 
 	mux.HandleFunc("GET /api/lobby/{id}/events", func(w http.ResponseWriter, r *http.Request) {
@@ -253,6 +297,24 @@ func isOwner(iss *identity.Issuer, id, token string) bool {
 	}
 	owner, err := iss.Verify(token)
 	return err == nil && owner == id
+}
+
+// playerFor and seatFor are the one binding between a room's seats and
+// the sim's two players: the owner is player one and the guest is player
+// two. The sim rolls roles against players because it knows nothing about
+// lobbies; the server owns the mapping in both directions.
+func playerFor(seat rooms.Seat) game.Player {
+	if seat == rooms.SeatGuest {
+		return game.PlayerTwo
+	}
+	return game.PlayerOne
+}
+
+func seatFor(player game.Player) rooms.Seat {
+	if player == game.PlayerTwo {
+		return rooms.SeatGuest
+	}
+	return rooms.SeatOwner
 }
 
 func lobbyPayload(id string, st rooms.Status, token string) lobbyResponse {

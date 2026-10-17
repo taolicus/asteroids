@@ -33,7 +33,13 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
   Seating is identity-based, not arrival-ordered: a guest can never take
   someone else's owner seat.
 - Roles are *not* seats. Pilot/gunner are rolled 50/50 at each round
-  start and are owned by `implement-round-flow-and-replay.md`.
+  start, and the two are independent: either player flies. The simulation
+  keeps only its two players, and the server binds owner → player one and
+  guest → player two (`playerFor`/`seatFor` in `internal/server`), which is
+  the only place the two vocabularies meet.
+- The lobby's `waiting` (below) and a round's `waiting` phase are different
+  things: `state` describes the seats, `phase` describes the round about
+  to start.
 - The guest seat is held while its holder is present (see presence
   below); once the holder has been absent past the presence TTL, the
   seat is free and the next guest takes it with a fresh per-instance

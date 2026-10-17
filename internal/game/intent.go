@@ -5,10 +5,9 @@ package game
 
 import "errors"
 
-// Role identifies which set of controls an intent drives. Roles are
-// rolled per round (implement-round-flow-and-replay.md); today the
-// server maps the owner seat to the pilot and the guest seat to the
-// gunner.
+// Role identifies which set of controls an intent drives. The server maps
+// each round's rolled player to a role (`Sim.RoleOf`): the pilot's controls
+// drive the ship, the gunner's drive the weapons.
 type Role string
 
 const (

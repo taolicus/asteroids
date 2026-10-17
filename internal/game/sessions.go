@@ -4,10 +4,10 @@
 // the shared owner that the input endpoint submits intents to and that
 // the snapshot stream subscribes to.
 //
-// The lifecycle here is interim: nothing owns round start yet, so a sim
-// is created on first use and stopped when it goes idle. Round flow
-// (implement-round-flow-and-replay.md) will later take over start and
-// stop.
+// A sim owns its whole round sequence, so the lifecycle here stays about
+// the room rather than the round: created on first use (an intent or a
+// stream subscription), stopped when it goes idle. Rounds within a sim
+// start and restart on their own (round.go).
 package game
 
 import (

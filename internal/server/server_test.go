@@ -123,6 +123,70 @@ func readyLobby(t *testing.T, ts *testServer) (id, ownerToken, guestToken string
 	return id, ownerToken, guestToken
 }
 
+// postRestart asks the room for a fresh round with the given token.
+func postRestart(t *testing.T, ts *testServer, id, token string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/api/lobby/%s/restart", ts.URL, id), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set(playerTokenHeader, token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { res.Body.Close() })
+	return res
+}
+
+// tokenFor returns the credential of whichever seat holds role this
+// round. Roles are rolled, so a test must ask the sim rather than assume
+// the owner pilots.
+func tokenFor(t *testing.T, sim *game.Sim, role game.Role, ownerToken, guestToken string) string {
+	t.Helper()
+	ownerRole, err := sim.RoleOf(game.PlayerOne)
+	if err != nil {
+		t.Fatalf("RoleOf(owner) = %v", err)
+	}
+	guestRole, err := sim.RoleOf(game.PlayerTwo)
+	if err != nil {
+		t.Fatalf("RoleOf(guest) = %v", err)
+	}
+	if ownerRole == guestRole {
+		t.Fatalf("both seats hold %q", ownerRole)
+	}
+	if ownerRole == role {
+		return ownerToken
+	}
+	if guestRole == role {
+		return guestToken
+	}
+	t.Fatalf("no seat holds %q (owner=%q guest=%q)", role, ownerRole, guestRole)
+	return ""
+}
+
+// waitForPlaySim drains a sim mailbox until the round's field goes live.
+func waitForPlaySim(t *testing.T, ch <-chan game.Snapshot) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case snap, ok := <-ch:
+			if !ok {
+				t.Fatal("mailbox closed before play began")
+			}
+			if snap.Phase == game.PhasePlaying {
+				return
+			}
+		case <-deadline:
+			t.Fatal("round never began playing")
+		}
+	}
+}
+
 func TestIdentityEndpoint(t *testing.T) {
 	ts := newTestServer(t)
 	id1, tok1 := issueIdentity(t, ts)
@@ -274,25 +338,42 @@ func TestCredentialFailsWithDifferentKey(t *testing.T) {
 	}
 }
 
-func TestPilotIntentMovesTheShip(t *testing.T) {
+// TestFirstIntentStartsTheSim checks the room's loop starts lazily on the
+// first submitted intent, like the first stream subscription.
+func TestFirstIntentStartsTheSim(t *testing.T) {
 	ts := newTestServer(t)
 	id, ownerToken, _ := readyLobby(t, ts)
 
-	res := postIntent(t, ts, id, ownerToken, `{"seq":1,"rotate":0,"thrust":true}`)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("pilot intent = %d, want 200", res.StatusCode)
+	res := postIntent(t, ts, id, ownerToken, `{"seq":1,"thrust":true}`)
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("first intent = %d, want 200 or 400", res.StatusCode)
 	}
-
-	// The first intent starts the room's sim lazily.
-	sim := ts.sessions.Get(id)
-	if sim == nil {
+	if ts.sessions.Get(id) == nil {
 		t.Fatal("accepting an intent did not start a sim")
 	}
+}
+
+func TestPilotIntentMovesTheShip(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	// Roles are rolled each round, so find the seat that is flying.
+	sim := ts.sessions.Start(id)
+	pilotToken := tokenFor(t, sim, game.RolePilot, ownerToken, guestToken)
+
 	ch, cancel := sim.Subscribe()
 	defer cancel()
+	waitForPlaySim(t, ch)
 
+	// Hold thrust, as a client posting a fresh intent would, and watch
+	// the shared ship gain velocity.
 	deadline := time.After(2 * time.Second)
-	for {
+	for seq := uint64(1); ; seq++ {
+		res := postIntent(t, ts, id, pilotToken,
+			fmt.Sprintf(`{"seq":%d,"thrust":true}`, seq))
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("pilot intent = %d, want 200", res.StatusCode)
+		}
 		select {
 		case snap := <-ch:
 			if snap.Ship.Vel.X != 0 || snap.Ship.Vel.Y != 0 {
@@ -304,16 +385,19 @@ func TestPilotIntentMovesTheShip(t *testing.T) {
 	}
 }
 
-func TestGuestIntentUsesTheGunnerShape(t *testing.T) {
+func TestGunnerSeatUsesTheGunnerShape(t *testing.T) {
 	ts := newTestServer(t)
-	id, _, guestToken := readyLobby(t, ts)
+	id, ownerToken, guestToken := readyLobby(t, ts)
 
-	res := postIntent(t, ts, id, guestToken, `{"seq":1,"fire":true}`)
+	sim := ts.sessions.Start(id)
+	gunnerToken := tokenFor(t, sim, game.RoleGunner, ownerToken, guestToken)
+
+	res := postIntent(t, ts, id, gunnerToken, `{"seq":1,"fire":true}`)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("gunner intent = %d, want 200", res.StatusCode)
 	}
 	// The gunner must not be able to send pilot fields.
-	res = postIntent(t, ts, id, guestToken, `{"seq":2,"rotate":1}`)
+	res = postIntent(t, ts, id, gunnerToken, `{"seq":2,"rotate":1}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("gunner sending rotate = %d, want 400", res.StatusCode)
 	}
@@ -321,7 +405,10 @@ func TestGuestIntentUsesTheGunnerShape(t *testing.T) {
 
 func TestIntentRejections(t *testing.T) {
 	ts := newTestServer(t)
-	id, ownerToken, _ := readyLobby(t, ts)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	// Pilot-shaped bodies need whichever seat is piloting this round.
+	pilotToken := tokenFor(t, ts.sessions.Start(id), game.RolePilot, ownerToken, guestToken)
 
 	// A lobby with only its owner present is not ready.
 	loneID, loneOwner := issueIdentity(t, ts)
@@ -337,13 +424,13 @@ func TestIntentRejections(t *testing.T) {
 		{"no token", id, "", `{"seq":1,"thrust":true}`, http.StatusUnauthorized},
 		{"unknown token", id, "not-a-credential", `{"seq":1,"thrust":true}`, http.StatusUnauthorized},
 		{"unknown lobby", "zzzzzzzzzzzz", ownerToken, `{"seq":1,"thrust":true}`, http.StatusNotFound},
-		{"malformed json", id, ownerToken, `{`, http.StatusBadRequest},
-		{"empty body", id, ownerToken, ``, http.StatusBadRequest},
-		{"wrong type", id, ownerToken, `{"seq":"one","thrust":true}`, http.StatusBadRequest},
-		{"rotate out of range", id, ownerToken, `{"seq":1,"rotate":2}`, http.StatusBadRequest},
-		{"other role's field", id, ownerToken, `{"seq":1,"fire":true}`, http.StatusBadRequest},
+		{"malformed json", id, pilotToken, `{`, http.StatusBadRequest},
+		{"empty body", id, pilotToken, ``, http.StatusBadRequest},
+		{"wrong type", id, pilotToken, `{"seq":"one","thrust":true}`, http.StatusBadRequest},
+		{"rotate out of range", id, pilotToken, `{"seq":1,"rotate":2}`, http.StatusBadRequest},
+		{"other role's field", id, pilotToken, `{"seq":1,"fire":true}`, http.StatusBadRequest},
 		{"lobby not ready", loneID, loneOwner, `{"seq":1,"thrust":true}`, http.StatusConflict},
-		{"oversized body", id, ownerToken, `{"seq":1,"thrust":true,"pad":"` + strings.Repeat("x", 600) + `"}`, http.StatusRequestEntityTooLarge},
+		{"oversized body", id, pilotToken, `{"seq":1,"thrust":true,"pad":"` + strings.Repeat("x", 600) + `"}`, http.StatusRequestEntityTooLarge},
 	}
 
 	for _, tt := range tests {
@@ -358,11 +445,13 @@ func TestIntentRejections(t *testing.T) {
 
 func TestIntentCoalescesDuplicatesAndCapsRate(t *testing.T) {
 	ts := newTestServer(t)
-	id, ownerToken, _ := readyLobby(t, ts)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	pilotToken := tokenFor(t, ts.sessions.Start(id), game.RolePilot, ownerToken, guestToken)
 
 	// Re-posting the same sequence is coalesced, not an error.
 	for i := 0; i < 2; i++ {
-		res := postIntent(t, ts, id, ownerToken, `{"seq":5,"thrust":true}`)
+		res := postIntent(t, ts, id, pilotToken, `{"seq":5,"thrust":true}`)
 		if res.StatusCode != http.StatusOK {
 			t.Fatalf("duplicate seq = %d, want 200", res.StatusCode)
 		}
@@ -372,7 +461,7 @@ func TestIntentCoalescesDuplicatesAndCapsRate(t *testing.T) {
 	// window is refused.
 	limited := false
 	for seq := 6; seq <= 70; seq++ {
-		res := postIntent(t, ts, id, ownerToken,
+		res := postIntent(t, ts, id, pilotToken,
 			fmt.Sprintf(`{"seq":%d,"thrust":true}`, seq))
 		if res.StatusCode == http.StatusTooManyRequests {
 			limited = true
@@ -381,5 +470,59 @@ func TestIntentCoalescesDuplicatesAndCapsRate(t *testing.T) {
 	}
 	if !limited {
 		t.Fatal("rate cap never engaged within one window")
+	}
+}
+
+// TestRestartStatusCodes covers the replay endpoint: either player may
+// restart, and a round that is already waiting needs no restart at all.
+func TestRestartStatusCodes(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	loneID, loneOwner := issueIdentity(t, ts)
+	enterLobby(t, ts, loneID, loneOwner)
+
+	tests := []struct {
+		name  string
+		id    string
+		token string
+		want  int
+	}{
+		{"owner restarts", id, ownerToken, http.StatusOK},
+		{"guest restarts", id, guestToken, http.StatusOK},
+		{"no token", id, "", http.StatusUnauthorized},
+		{"unknown token", id, "not-a-credential", http.StatusUnauthorized},
+		{"unknown lobby", "zzzzzzzzzzzz", ownerToken, http.StatusNotFound},
+		{"malformed id", "short", ownerToken, http.StatusNotFound},
+		{"lobby not ready", loneID, loneOwner, http.StatusConflict},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := postRestart(t, ts, tt.id, tt.token)
+			if res.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tt.want)
+			}
+		})
+	}
+}
+
+// TestRestartIsRefusedWhilePlaying checks a live round cannot be reset
+// from under the copilots: a replay only works once game over freezes the
+// field.
+func TestRestartIsRefusedWhilePlaying(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, _ := readyLobby(t, ts)
+
+	res := openStream(t, ts, id, ownerToken)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("events status = %d, want 200", res.StatusCode)
+	}
+	lines, stop := lineScanner(res.Body)
+	defer stop()
+	waitForPhase(t, lines, string(game.PhasePlaying))
+
+	if res := postRestart(t, ts, id, ownerToken); res.StatusCode != http.StatusConflict {
+		t.Fatalf("restart while playing = %d, want 409", res.StatusCode)
 	}
 }

@@ -102,6 +102,16 @@ button:active {
   background: #26335420;
 }
 
+#round-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+#round-stats {
+  color: #aeb4c2;
+  font-variant-numeric: tabular-nums;
+}
+
 #error-message {
   color: #ff9b8a;
   line-height: 1.5;
