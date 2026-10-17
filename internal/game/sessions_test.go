@@ -24,6 +24,16 @@ func TestSessionsStartIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSessionsSeedsItsSims(t *testing.T) {
+	s := NewSessions(time.Minute)
+	t.Cleanup(s.StopAll)
+	s.seed = func() int64 { return 4242 }
+
+	if got := s.Start("a").seed; got != 4242 {
+		t.Fatalf("sim seed = %d, want the sessions' 4242", got)
+	}
+}
+
 func TestSessionsStop(t *testing.T) {
 	s := NewSessions(time.Minute)
 	sim := s.Start("a")

@@ -25,11 +25,15 @@ var ShipTuning = struct {
 	Damping float64
 	// MaxSpeed caps the ship's speed, units per second.
 	MaxSpeed float64
+	// Radius is the ship's collision radius against asteroids. Initial:
+	// the rendering size is not fixed yet, so this is a starting value.
+	Radius float64
 }{
 	TurnRate: 4.0,
 	Thrust:   320,
 	Damping:  0.6,
 	MaxSpeed: 480,
+	Radius:   12,
 }
 
 // Vec2 is a 2D position or velocity in sim units.

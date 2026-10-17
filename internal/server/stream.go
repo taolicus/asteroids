@@ -38,10 +38,13 @@ var defaultStreamTimings = streamTimings{
 	writeTimeout: 15 * time.Second,
 }
 
-// phasePlaying is the round phase the stream reports until round flow
-// lands (implement-round-flow-and-replay.md). A stream only opens for a
-// ready lobby, and the interim sim has no other phase.
-const phasePlaying = "playing"
+// phasePlaying is the round phase while there are lives left, and
+// phaseOver once the sim reports zero. Waiting is still round flow's to
+// report (implement-round-flow-and-replay.md).
+const (
+	phasePlaying = "playing"
+	phaseOver    = "over"
+)
 
 // heartbeatFrame is an SSE comment: it is ignored by parsers but keeps
 // the connection warm.
@@ -50,14 +53,17 @@ const heartbeatFrame = ": ping\n\n"
 // snapshot is the wire form of one simulation snapshot. The sim's own
 // Snapshot is not the wire format: this DTO is the protocol surface, and
 // it grows as the sim gains state. See the settled contract for every
-// field; lives, score, and the survival timer arrive with the asteroids
-// and round-flow tasks.
+// field.
 type snapshot struct {
-	Seq   uint64      `json:"seq"`
-	Tick  uint64      `json:"tick"`
-	Arena float64     `json:"arena"`
-	Phase string      `json:"phase"`
-	Ship  shipState   `json:"ship"`
+	Seq   uint64  `json:"seq"`
+	Tick  uint64  `json:"tick"`
+	Arena float64 `json:"arena"`
+	Phase string  `json:"phase"`
+	Lives int     `json:"lives"`
+	Score int     `json:"score"`
+	// Time is the survival timer in seconds.
+	Time  float64     `json:"time"`
+	Ship  *shipState  `json:"ship"`
 	Rocks []rockState `json:"rocks"`
 	Shots []shotState `json:"shots"`
 }
@@ -82,24 +88,43 @@ type shotState struct {
 	Y  float64 `json:"y"`
 }
 
-// snapshotFor maps the sim's current state to the wire schema.
+// snapshotFor maps the sim's current state to the wire schema. The ship
+// and the phase both follow the life count: there is no ship once the
+// round is over.
 func snapshotFor(snap game.Snapshot) snapshot {
-	return snapshot{
+	s := snapshot{
 		Seq:   snap.Seq,
 		Tick:  snap.Tick,
 		Arena: game.ArenaSize,
 		Phase: phasePlaying,
-		Ship: shipState{
+		Lives: snap.Lives,
+		Score: snap.Score,
+		Time:  snap.Survival,
+		Rocks: make([]rockState, 0, len(snap.Asteroids)),
+		Shots: make([]shotState, 0, len(snap.Projectiles)),
+	}
+	if snap.Lives <= 0 {
+		s.Phase = phaseOver
+	} else {
+		s.Ship = &shipState{
 			X:       snap.Ship.Pos.X,
 			Y:       snap.Ship.Pos.Y,
 			Heading: snap.Ship.Heading,
-		},
-		// The sim models no asteroids or projectiles yet
-		// (implement-asteroids-and-weapons.md). The arrays are part of
-		// the schema and are always present.
-		Rocks: []rockState{},
-		Shots: []shotState{},
+			Invuln:  snap.Invuln,
+		}
 	}
+	for _, a := range snap.Asteroids {
+		s.Rocks = append(s.Rocks, rockState{
+			ID:     a.ID,
+			X:      a.Pos.X,
+			Y:      a.Pos.Y,
+			Radius: a.Radius(),
+		})
+	}
+	for _, p := range snap.Projectiles {
+		s.Shots = append(s.Shots, shotState{ID: p.ID, X: p.Pos.X, Y: p.Pos.Y})
+	}
+	return s
 }
 
 // snapshotFrame renders one snapshot as an SSE event. The JSON is

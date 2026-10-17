@@ -3,6 +3,7 @@ area: client
 dependencies:
   - define-snapshot-format-and-interpolation.md
   - implement-sse-snapshot-stream.md
+  - implement-asteroids-and-weapons.md
 ---
 
 # Implement the client renderer

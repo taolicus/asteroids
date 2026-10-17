@@ -124,7 +124,7 @@ func TestUnknownRoleRejected(t *testing.T) {
 }
 
 func TestSubmitIntentAfterStop(t *testing.T) {
-	sim := NewSim()
+	sim := NewSim(1)
 	go sim.Run()
 	sim.Stop()
 	if err := sim.SubmitIntent(RolePilot, Intent{Seq: 1}); err != ErrStopped {

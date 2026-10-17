@@ -12,6 +12,7 @@ package game
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -30,6 +31,9 @@ type Sessions struct {
 	sims map[string]*session
 	idle time.Duration
 	now  func() time.Time
+	// seed supplies each new room's simulation seed, so a round is
+	// reproducible while rooms differ.
+	seed func() int64
 }
 
 // NewSessions creates an empty registry. idle is how long a sim with no
@@ -40,6 +44,7 @@ func NewSessions(idle time.Duration) *Sessions {
 		sims: make(map[string]*session),
 		idle: idle,
 		now:  time.Now,
+		seed: rand.Int63,
 	}
 }
 
@@ -51,7 +56,7 @@ func (s *Sessions) Start(id string) *Sim {
 
 	e, ok := s.sims[id]
 	if !ok {
-		e = &session{sim: NewSim()}
+		e = &session{sim: NewSim(s.seed())}
 		s.sims[id] = e
 		go e.sim.Run()
 	}

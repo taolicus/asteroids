@@ -8,7 +8,7 @@ import (
 
 func startSim(t *testing.T) *Sim {
 	t.Helper()
-	sim := NewSim()
+	sim := NewSim(1)
 	go sim.Run()
 	t.Cleanup(sim.Stop)
 	return sim
@@ -90,7 +90,7 @@ func TestOneBusySimDoesNotStallAnother(t *testing.T) {
 }
 
 func TestStopClosesSubscribers(t *testing.T) {
-	sim := NewSim()
+	sim := NewSim(1)
 	go sim.Run()
 	ch, cancel := sim.Subscribe()
 	defer cancel()
@@ -111,7 +111,7 @@ func TestStopClosesSubscribers(t *testing.T) {
 }
 
 func TestStopWithoutRunDoesNotHang(t *testing.T) {
-	sim := NewSim()
+	sim := NewSim(1)
 	done := make(chan struct{})
 	go func() {
 		sim.Stop()
@@ -125,7 +125,7 @@ func TestStopWithoutRunDoesNotHang(t *testing.T) {
 }
 
 func TestSubscribeAfterStop(t *testing.T) {
-	sim := NewSim()
+	sim := NewSim(1)
 	go sim.Run()
 	sim.Stop()
 
@@ -139,7 +139,7 @@ func TestSubscribeAfterStop(t *testing.T) {
 func TestNoGoroutineLeak(t *testing.T) {
 	before := runtime.NumGoroutine()
 	for i := 0; i < 20; i++ {
-		sim := NewSim()
+		sim := NewSim(1)
 		go sim.Run()
 		ch, cancel := sim.Subscribe()
 		<-ch // receive one snapshot so we know the loop is alive

@@ -27,11 +27,19 @@ const intentTTLTicks = 8
 const maxIntentsPerSecond = 2 * TickRate
 
 // Snapshot is one immutable view of room state produced by the loop.
-// Later tasks extend it with asteroid and round fields.
+// Later tasks add round-phase fields; the shared score, lives, and
+// survival timer are already here. Slices are value copies, safe to read
+// from another goroutine.
 type Snapshot struct {
-	Seq  uint64
-	Tick uint64
-	Ship Ship
+	Seq         uint64
+	Tick        uint64
+	Ship        Ship
+	Lives       int
+	Score       int
+	Survival    float64 // seconds survived this round
+	Invuln      float64 // seconds of ship invulnerability remaining
+	Asteroids   []Asteroid
+	Projectiles []Projectile
 }
 
 // intentSlot is one role's latest intent plus the bookkeeping used to
@@ -50,6 +58,7 @@ var ErrStopped = errors.New("sim stopped")
 // Sim runs a fixed-timestep loop on a single goroutine and fans snapshots
 // out to subscribers without ever blocking on them.
 type Sim struct {
+	seed     int64
 	cmds     chan any
 	done     chan struct{}
 	stopOnce sync.Once
@@ -76,9 +85,12 @@ type intentReq struct {
 	reply chan error
 }
 
-// NewSim creates a stopped sim. Call Run to start the loop.
-func NewSim() *Sim {
+// NewSim creates a stopped sim seeded with seed. The seed makes the
+// round's asteroid field and split directions reproducible. Call Run to
+// start the loop.
+func NewSim(seed int64) *Sim {
 	return &Sim{
+		seed: seed,
 		cmds: make(chan any),
 		done: make(chan struct{}),
 	}
@@ -100,7 +112,7 @@ func (s *Sim) Run() {
 
 	var tick uint64
 	var seq uint64
-	ship := newShip()
+	w := newWorld(s.seed)
 	var pilot, gunner intentSlot
 	subscribers := make(map[chan Snapshot]struct{})
 
@@ -129,12 +141,12 @@ func (s *Sim) Run() {
 		case <-ticker.C:
 			tick++
 			s.ticks.Store(tick)
-			stepShip(&ship, liveIntent(&pilot, tick), 1.0/TickRate)
+			w.step(tick, liveIntent(&pilot, tick), liveIntent(&gunner, tick), 1.0/TickRate)
 			if tick%BroadcastEvery != 0 {
 				continue
 			}
 			seq++
-			snap := Snapshot{Seq: seq, Tick: tick, Ship: ship}
+			snap := w.snapshot(seq, tick)
 			for ch := range subscribers {
 				trySendLatest(ch, snap)
 			}

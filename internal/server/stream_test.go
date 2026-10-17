@@ -133,6 +133,18 @@ func TestEventsStreamsOrderedSnapshots(t *testing.T) {
 	if first.Phase != phasePlaying {
 		t.Fatalf("phase = %q, want %q", first.Phase, phasePlaying)
 	}
+	if first.Lives != game.StartLives || first.Score != 0 {
+		t.Fatalf("lives/score = %d/%d, want %d/0", first.Lives, first.Score, game.StartLives)
+	}
+	if first.Ship == nil {
+		t.Fatal("no ship in the opening snapshot")
+	}
+	if len(first.Rocks) != game.AsteroidTuning.StartCount {
+		t.Fatalf("rocks = %d, want %d", len(first.Rocks), game.AsteroidTuning.StartCount)
+	}
+	if got := first.Rocks[0].Radius; got != game.TierLarge.Radius() {
+		t.Fatalf("rock radius = %v, want %v", got, game.TierLarge.Radius())
+	}
 	if first.Seq == 0 || first.Tick != first.Seq*game.BroadcastEvery {
 		t.Fatalf("first snapshot seq/tick = %d/%d", first.Seq, first.Tick)
 	}
@@ -144,6 +156,48 @@ func TestEventsStreamsOrderedSnapshots(t *testing.T) {
 			t.Fatalf("sequence went backwards: %d then %d", prev, s.Seq)
 		}
 		prev = s.Seq
+	}
+}
+
+// TestSnapshotForMapsTheRoundState checks the sim-to-wire mapping without
+// waiting for a real round to end.
+func TestSnapshotForMapsTheRoundState(t *testing.T) {
+	over := snapshotFor(game.Snapshot{
+		Seq:         8,
+		Tick:        16,
+		Lives:       0,
+		Score:       250,
+		Survival:    12.5,
+		Ship:        game.Ship{Pos: game.Vec2{X: 1, Y: 2}, Heading: 3},
+		Asteroids:   []game.Asteroid{{ID: 4, Tier: game.TierMedium, Pos: game.Vec2{X: 10, Y: 20}}},
+		Projectiles: []game.Projectile{{ID: 5, Pos: game.Vec2{X: 30, Y: 40}}},
+	})
+	if over.Phase != phaseOver {
+		t.Fatalf("phase = %q, want %q", over.Phase, phaseOver)
+	}
+	if over.Ship != nil {
+		t.Fatalf("ship = %+v, want nil once the round is over", over.Ship)
+	}
+	if over.Score != 250 || over.Time != 12.5 {
+		t.Fatalf("score/time = %d/%v, want 250/12.5", over.Score, over.Time)
+	}
+	if len(over.Rocks) != 1 || over.Rocks[0].Radius != game.TierMedium.Radius() {
+		t.Fatalf("rocks = %+v", over.Rocks)
+	}
+	if len(over.Shots) != 1 || over.Shots[0].ID != 5 {
+		t.Fatalf("shots = %+v", over.Shots)
+	}
+
+	playing := snapshotFor(game.Snapshot{Seq: 1, Tick: 2, Lives: game.StartLives, Invuln: 1.5})
+	if playing.Phase != phasePlaying || playing.Ship == nil {
+		t.Fatalf("playing phase/ship = %q/%v", playing.Phase, playing.Ship)
+	}
+	if playing.Ship.Invuln != 1.5 {
+		t.Fatalf("invuln = %v, want 1.5", playing.Ship.Invuln)
+	}
+	// Empty arrays, not null: the renderer iterates them unconditionally.
+	if playing.Rocks == nil || playing.Shots == nil {
+		t.Fatal("empty rock/shot arrays must be present, not null")
 	}
 }
 
