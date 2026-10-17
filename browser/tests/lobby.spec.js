@@ -23,6 +23,22 @@ test("index page is the owner's lobby, not a create screen", async ({ page }) =>
   await expect(page.getByRole("button", { name: /create/i })).toHaveCount(0);
 });
 
+test("the lobby says it is waiting, with a stepping ellipsis", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#waiting")).toContainText("Waiting for friend");
+  await expect(page.locator("#waiting-dots")).toHaveText(/^\.{1,3}$/);
+
+  // The dots step one, two, three, and round again: sample until all three
+  // have been seen rather than trusting one reading.
+  const seen = new Set();
+  for (let i = 0; i < 50 && seen.size < 3; i++) {
+    seen.add(await page.locator("#waiting-dots").textContent());
+    await page.waitForTimeout(100);
+  }
+  expect([...seen].sort()).toEqual([".", "..", "..."]);
+});
+
 test("the identity and its link survive a reload", async ({ page }) => {
   await page.goto("/");
   const before = await shareLink(page);

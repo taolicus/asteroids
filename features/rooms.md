@@ -86,19 +86,21 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
 ## Frontend
 
 `web/app.js` is the lobby. `/` shows the player's own lobby (identity
-created on first visit) with the permanent link and a share affordance:
-the Web Share API when available, otherwise copy-to-clipboard. Both seats
-see the same panel — the link and its hint — because nothing in it needs to
-say who created the room or who is waiting: the link works for anyone, and
-the stream is what says the round is starting. `/?r=<id>` enters that
-lobby: the owner credential claims the owner
-seat, everyone else joins as guest (a stored per-instance guest token
-reconnects to the same seat). There is no create button and no home
-screen. The client polls status every 2s while the lobby is waiting for
-its second player; once both seats are filled it stops polling, opens
-the live snapshot stream, and renders the shared arena
-(`features/renderer.md`). It re-enters when an instance has been
-reclaimed (404) or a guest seat was lost (401), and returns to polling
+created on first visit) with the permanent link and a share affordance: the
+Web Share API when available, otherwise copy-to-clipboard. Both seats see
+the same panel — the link and a "Waiting for friend" line — because nothing
+in it needs to say who created the room or who is waiting: the link works
+for anyone, and the stream is what says the round is starting. The waiting
+line's ellipsis steps one dot, two, three, round again; `app.js` draws it as
+real text (so a test or a screen reader reads a phrase, not a CSS
+pseudo-element) and only while the panel is on screen. `/?r=<id>` enters
+that lobby: the owner credential claims the owner seat, everyone else joins
+as guest (a stored per-instance guest token reconnects to the same seat).
+There is no create button and no home screen. The client polls status every
+2s while the lobby is waiting for its second player; once both seats are
+filled it stops polling, opens the live snapshot stream, and renders the
+shared arena (`features/renderer.md`). It re-enters when an instance has
+been reclaimed (404) or a guest seat was lost (401), and returns to polling
 if the room is waiting again (409). Full (409) and malformed-link (404)
 cases render readable states, never a broken screen. The UI is covered
 by browser tests (`features/testing.md`).

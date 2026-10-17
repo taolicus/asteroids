@@ -169,6 +169,14 @@ section {
   font-size: 0.875rem;
 }
 
+/* The waiting line's dots grow in a fixed-width box so the line does not
+   shift as the ellipsis steps. */
+#waiting-dots {
+  display: inline-block;
+  width: 3ch;
+  text-align: left;
+}
+
 button {
   padding: 0.7rem 1.4rem;
   border: 1px solid #3d4f7a;
