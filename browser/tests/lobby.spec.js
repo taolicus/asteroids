@@ -45,20 +45,14 @@ test("the landing heading is the two-line title in the display face", async ({ p
     .toBe(true);
 });
 
-test("the lobby says it is waiting, with a stepping ellipsis", async ({ page }) => {
+test("the lobby shows a waiting spinner while it waits", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator("#waiting")).toContainText("Waiting for friend");
-  await expect(page.locator("#waiting-dots")).toHaveText(/^\.{1,3}$/);
-
-  // The dots step one, two, three, and round again: sample until all three
-  // have been seen rather than trusting one reading.
-  const seen = new Set();
-  for (let i = 0; i < 50 && seen.size < 3; i++) {
-    seen.add(await page.locator("#waiting-dots").textContent());
-    await page.waitForTimeout(100);
-  }
-  expect([...seen].sort()).toEqual([".", "..", "..."]);
+  const spinner = page.locator("#spinner");
+  await expect(spinner).toBeVisible();
+  await expect(spinner).toHaveCSS("animation-name", "spin");
+  await expect(page.locator("#waiting-dots")).toHaveCount(0);
 });
 
 test("the identity and its link survive a reload", async ({ page }) => {

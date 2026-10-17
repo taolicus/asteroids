@@ -91,9 +91,8 @@ Web Share API when available, otherwise copy-to-clipboard. Both seats see
 the same panel — the link and a "Waiting for friend" line — because nothing
 in it needs to say who created the room or who is waiting: the link works
 for anyone, and the stream is what says the round is starting. The waiting
-line's ellipsis steps one dot, two, three, round again; `app.js` draws it as
-real text (so a test or a screen reader reads a phrase, not a CSS
-pseudo-element) and only while the panel is on screen. `/?r=<id>` enters
+line is accompanied by a small spinning indicator that runs only while the
+panel is on screen. `/?r=<id>` enters
 that lobby: the owner credential claims the owner seat, everyone else joins
 as guest (a stored per-instance guest token reconnects to the same seat).
 There is no create button and no home screen. The client polls status every

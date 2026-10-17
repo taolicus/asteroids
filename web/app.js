@@ -5,7 +5,6 @@ const MAX_ARENA = 640; // the largest the arena is drawn
 const IDENTITY_KEY = "asteroids-identity";
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
-const WAITING_MS = 400; // the waiting line's ellipsis step
 
 const $ = (id) => document.getElementById(id);
 
@@ -108,7 +107,7 @@ async function fetchJSON(url, options) {
 let session = null;
 let pollTimer = null;
 let game = null;
-let waitingTimer = 0;
+
 
 async function start() {
   let lobbyId;
@@ -457,29 +456,20 @@ function render(data) {
 
 function show(view) {
   for (const v of ["lobby", "error"]) $(v).hidden = v !== view;
-  // The waiting line animates only while the panel is on screen.
+  // The spinner runs only while the lobby is on screen.
   if (view === "lobby") startWaiting();
   else stopWaiting();
 }
 
-// startWaiting and stopWaiting drive the lobby's "Waiting for friend" line:
-// one dot, two, three, then round again. The dots are drawn here rather
-// than by CSS so the text stays real text (a test reads it, and the phrase
-// is what a screen reader announces), and they grow inside a fixed-width
-// box so the line does not wobble.
+// startWaiting and stopWaiting drive the lobby's spinner: it appears while
+// the room is waiting and disappears when the round starts or the error
+// screen shows.
 function startWaiting() {
-  if (waitingTimer) return;
-  let dots = 1;
-  $("waiting-dots").textContent = ".".repeat(dots);
-  waitingTimer = setInterval(() => {
-    dots = (dots % 3) + 1;
-    $("waiting-dots").textContent = ".".repeat(dots);
-  }, WAITING_MS);
+  $("spinner").hidden = false;
 }
 
 function stopWaiting() {
-  clearInterval(waitingTimer);
-  waitingTimer = 0;
+  $("spinner").hidden = true;
 }
 
 function showError(message) {
