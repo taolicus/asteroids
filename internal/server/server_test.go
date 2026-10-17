@@ -5,24 +5,38 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/taolicus/asteroids/internal/game"
 	"github.com/taolicus/asteroids/internal/identity"
 	"github.com/taolicus/asteroids/internal/rooms"
 )
 
 const testKey = "server-test-key"
 
-func newTestServer(t *testing.T) *httptest.Server {
+// testServer bundles the HTTP server with the managers it was built
+// from, so tests can inspect the sim layer.
+type testServer struct {
+	*httptest.Server
+	sessions *game.Sessions
+}
+
+func newTestServer(t *testing.T) *testServer {
 	t.Helper()
 	return newTestServerWithKey(t, testKey)
 }
 
-func newTestServerWithKey(t *testing.T, key string) *httptest.Server {
+func newTestServerWithKey(t *testing.T, key string) *testServer {
 	t.Helper()
-	ts := httptest.NewServer(Handler(rooms.NewManager(), identity.NewIssuer([]byte(key))))
-	t.Cleanup(ts.Close)
-	return ts
+	sessions := game.NewSessions(rooms.IdleGrace)
+	ts := httptest.NewServer(Handler(rooms.NewManager(), identity.NewIssuer([]byte(key)), sessions))
+	t.Cleanup(func() {
+		ts.Close()
+		sessions.StopAll()
+	})
+	return &testServer{Server: ts, sessions: sessions}
 }
 
 func doJSON(t *testing.T, method, url, token string) (*http.Response, map[string]any) {
@@ -48,7 +62,7 @@ func doJSON(t *testing.T, method, url, token string) (*http.Response, map[string
 
 // issueIdentity creates a fresh identity and returns its lobby ID and
 // owner credential.
-func issueIdentity(t *testing.T, ts *httptest.Server) (lobbyID, token string) {
+func issueIdentity(t *testing.T, ts *testServer) (lobbyID, token string) {
 	t.Helper()
 	res, data := doJSON(t, http.MethodPost, ts.URL+"/api/identities", "")
 	if res.StatusCode != http.StatusCreated {
@@ -65,14 +79,48 @@ func issueIdentity(t *testing.T, ts *httptest.Server) (lobbyID, token string) {
 	return lobbyID, token
 }
 
-func enterLobby(t *testing.T, ts *httptest.Server, id, token string) (*http.Response, map[string]any) {
+func enterLobby(t *testing.T, ts *testServer, id, token string) (*http.Response, map[string]any) {
 	t.Helper()
 	return doJSON(t, http.MethodPost, fmt.Sprintf("%s/api/lobby/%s", ts.URL, id), token)
 }
 
-func lobbyStatus(t *testing.T, ts *httptest.Server, id, token string) (*http.Response, map[string]any) {
+func lobbyStatus(t *testing.T, ts *testServer, id, token string) (*http.Response, map[string]any) {
 	t.Helper()
 	return doJSON(t, http.MethodGet, fmt.Sprintf("%s/api/lobby/%s", ts.URL, id), token)
+}
+
+// postIntent sends a raw intent body and returns the response with its
+// body still readable by the caller.
+func postIntent(t *testing.T, ts *testServer, id, token, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/api/lobby/%s/intent", ts.URL, id), strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set(playerTokenHeader, token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { res.Body.Close() })
+	return res
+}
+
+// readyLobby returns a lobby with both seats filled, plus the owner and
+// guest tokens and the owner's lobby ID.
+func readyLobby(t *testing.T, ts *testServer) (id, ownerToken, guestToken string) {
+	t.Helper()
+	id, ownerToken = issueIdentity(t, ts)
+	enterLobby(t, ts, id, ownerToken)
+	_, data := enterLobby(t, ts, id, "")
+	guestToken, _ = data["token"].(string)
+	if guestToken == "" {
+		t.Fatalf("guest enter did not return a token: %v", data)
+	}
+	return id, ownerToken, guestToken
 }
 
 func TestIdentityEndpoint(t *testing.T) {
@@ -223,5 +271,115 @@ func TestCredentialFailsWithDifferentKey(t *testing.T) {
 	res, data := enterLobby(t, other, id, token)
 	if res.StatusCode != http.StatusOK || data["seat"] != "guest" {
 		t.Fatalf("different key = %d, %v; want guest fallback", res.StatusCode, data)
+	}
+}
+
+func TestPilotIntentMovesTheShip(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, _ := readyLobby(t, ts)
+
+	res := postIntent(t, ts, id, ownerToken, `{"seq":1,"rotate":0,"thrust":true}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("pilot intent = %d, want 200", res.StatusCode)
+	}
+
+	// The first intent starts the room's sim lazily.
+	sim := ts.sessions.Get(id)
+	if sim == nil {
+		t.Fatal("accepting an intent did not start a sim")
+	}
+	ch, cancel := sim.Subscribe()
+	defer cancel()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case snap := <-ch:
+			if snap.Ship.Vel.X != 0 || snap.Ship.Vel.Y != 0 {
+				return // the pilot's thrust reached the simulation
+			}
+		case <-deadline:
+			t.Fatal("ship never accelerated after a thrust intent")
+		}
+	}
+}
+
+func TestGuestIntentUsesTheGunnerShape(t *testing.T) {
+	ts := newTestServer(t)
+	id, _, guestToken := readyLobby(t, ts)
+
+	res := postIntent(t, ts, id, guestToken, `{"seq":1,"fire":true}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("gunner intent = %d, want 200", res.StatusCode)
+	}
+	// The gunner must not be able to send pilot fields.
+	res = postIntent(t, ts, id, guestToken, `{"seq":2,"rotate":1}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("gunner sending rotate = %d, want 400", res.StatusCode)
+	}
+}
+
+func TestIntentRejections(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, _ := readyLobby(t, ts)
+
+	// A lobby with only its owner present is not ready.
+	loneID, loneOwner := issueIdentity(t, ts)
+	enterLobby(t, ts, loneID, loneOwner)
+
+	tests := []struct {
+		name  string
+		id    string
+		token string
+		body  string
+		want  int
+	}{
+		{"no token", id, "", `{"seq":1,"thrust":true}`, http.StatusUnauthorized},
+		{"unknown token", id, "not-a-credential", `{"seq":1,"thrust":true}`, http.StatusUnauthorized},
+		{"unknown lobby", "zzzzzzzzzzzz", ownerToken, `{"seq":1,"thrust":true}`, http.StatusNotFound},
+		{"malformed json", id, ownerToken, `{`, http.StatusBadRequest},
+		{"empty body", id, ownerToken, ``, http.StatusBadRequest},
+		{"wrong type", id, ownerToken, `{"seq":"one","thrust":true}`, http.StatusBadRequest},
+		{"rotate out of range", id, ownerToken, `{"seq":1,"rotate":2}`, http.StatusBadRequest},
+		{"other role's field", id, ownerToken, `{"seq":1,"fire":true}`, http.StatusBadRequest},
+		{"lobby not ready", loneID, loneOwner, `{"seq":1,"thrust":true}`, http.StatusConflict},
+		{"oversized body", id, ownerToken, `{"seq":1,"thrust":true,"pad":"` + strings.Repeat("x", 600) + `"}`, http.StatusRequestEntityTooLarge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := postIntent(t, ts, tt.id, tt.token, tt.body)
+			if res.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tt.want)
+			}
+		})
+	}
+}
+
+func TestIntentCoalescesDuplicatesAndCapsRate(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, _ := readyLobby(t, ts)
+
+	// Re-posting the same sequence is coalesced, not an error.
+	for i := 0; i < 2; i++ {
+		res := postIntent(t, ts, id, ownerToken, `{"seq":5,"thrust":true}`)
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("duplicate seq = %d, want 200", res.StatusCode)
+		}
+	}
+
+	// The coarse cap is 60 intents/second per role; the 61st in the same
+	// window is refused.
+	limited := false
+	for seq := 6; seq <= 70; seq++ {
+		res := postIntent(t, ts, id, ownerToken,
+			fmt.Sprintf(`{"seq":%d,"thrust":true}`, seq))
+		if res.StatusCode == http.StatusTooManyRequests {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Fatal("rate cap never engaged within one window")
 	}
 }

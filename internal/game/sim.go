@@ -15,11 +15,33 @@ const TickRate = 30
 // TickRate/BroadcastEvery = 15 Hz, within the README's 10–15 Hz target.
 const BroadcastEvery = 2
 
+// intentTTLTicks is how long an intent stays live without a refresh:
+// 8 ticks ≈ 267 ms at 30 Hz. Past it the loop applies a neutral intent,
+// so a backgrounded tab cannot leave thrust or rotation stuck on. See
+// tasks/closed/define-input-intent-contract.md.
+const intentTTLTicks = 8
+
+// maxIntentsPerSecond caps accepted intents per role per second. It is a
+// coarse safety bound, not a gameplay limit: excess is normally harmless
+// because the loop only samples the latest intent.
+const maxIntentsPerSecond = 2 * TickRate
+
 // Snapshot is one immutable view of room state produced by the loop.
-// Later tasks extend it with ship, asteroid, and round fields.
+// Later tasks extend it with asteroid and round fields.
 type Snapshot struct {
 	Seq  uint64
 	Tick uint64
+	Ship Ship
+}
+
+// intentSlot is one role's latest intent plus the bookkeeping used to
+// coalesce stale posts and cap the rate.
+type intentSlot struct {
+	in     Intent
+	tick   uint64 // tick at which in last refreshed
+	has    bool
+	window uint64 // current rate window (seconds since start)
+	count  int    // intents accepted within the window
 }
 
 // ErrStopped is returned by Subscribe after the loop has stopped.
@@ -37,6 +59,7 @@ type Sim struct {
 	started bool
 
 	ticks atomic.Uint64
+	subs  atomic.Int64
 }
 
 type subscribeReq struct {
@@ -45,6 +68,12 @@ type subscribeReq struct {
 
 type unsubscribeReq struct {
 	ch chan Snapshot
+}
+
+type intentReq struct {
+	role  Role
+	in    Intent
+	reply chan error
 }
 
 // NewSim creates a stopped sim. Call Run to start the loop.
@@ -71,6 +100,8 @@ func (s *Sim) Run() {
 
 	var tick uint64
 	var seq uint64
+	ship := newShip()
+	var pilot, gunner intentSlot
 	subscribers := make(map[chan Snapshot]struct{})
 
 	for {
@@ -79,30 +110,95 @@ func (s *Sim) Run() {
 			for ch := range subscribers {
 				close(ch)
 			}
+			s.subs.Store(0)
 			return
 		case cmd := <-s.cmds:
 			switch c := cmd.(type) {
 			case subscribeReq:
 				subscribers[c.ch] = struct{}{}
+				s.subs.Add(1)
 			case unsubscribeReq:
 				if _, ok := subscribers[c.ch]; ok {
 					delete(subscribers, c.ch)
+					s.subs.Add(-1)
 					close(c.ch)
 				}
+			case intentReq:
+				c.reply <- applyIntent(slotFor(&pilot, &gunner, c.role), c.in, tick)
 			}
 		case <-ticker.C:
 			tick++
 			s.ticks.Store(tick)
+			stepShip(&ship, liveIntent(&pilot, tick), 1.0/TickRate)
 			if tick%BroadcastEvery != 0 {
 				continue
 			}
 			seq++
-			snap := Snapshot{Seq: seq, Tick: tick}
+			snap := Snapshot{Seq: seq, Tick: tick, Ship: ship}
 			for ch := range subscribers {
 				trySendLatest(ch, snap)
 			}
 		}
 	}
+}
+
+// slotFor returns the intent slot for role, or nil if the role is
+// unknown.
+func slotFor(pilot, gunner *intentSlot, role Role) *intentSlot {
+	switch role {
+	case RolePilot:
+		return pilot
+	case RoleGunner:
+		return gunner
+	default:
+		return nil
+	}
+}
+
+// applyIntent records an intent in slot. It returns nil when the intent
+// is accepted or coalesced away, ErrUnknownRole for a nil slot, and
+// ErrRateLimited when the role has exceeded the coarse cap.
+//
+// An intent that arrives after a gap longer than the freshness window
+// starts a fresh session: the sequence watermark and rate window reset,
+// so a reloaded client beginning again at seq 1 is not dropped.
+func applyIntent(slot *intentSlot, in Intent, tick uint64) error {
+	if slot == nil {
+		return ErrUnknownRole
+	}
+	window := tick / TickRate
+	stale := !slot.has || tick-slot.tick > intentTTLTicks
+
+	switch {
+	case stale:
+		slot.count = 0
+		slot.window = window
+	case in.Seq != 0 && in.Seq <= slot.in.Seq:
+		// Reordered or duplicated by the network: coalesced away.
+		return nil
+	}
+
+	if slot.window != window {
+		slot.window = window
+		slot.count = 0
+	}
+	if slot.count >= maxIntentsPerSecond {
+		return ErrRateLimited
+	}
+	slot.count++
+	slot.in = in
+	slot.tick = tick
+	slot.has = true
+	return nil
+}
+
+// liveIntent returns the intent to apply this tick, or a neutral intent
+// once the slot has gone stale.
+func liveIntent(slot *intentSlot, tick uint64) Intent {
+	if !slot.has || tick-slot.tick > intentTTLTicks {
+		return neutral
+	}
+	return slot.in
 }
 
 // Stop asks the loop to exit and blocks until it has. Safe to call
@@ -142,6 +238,33 @@ func (s *Sim) Subscribe() (<-chan Snapshot, func()) {
 
 // Ticks reports how many simulation ticks have been completed.
 func (s *Sim) Ticks() uint64 { return s.ticks.Load() }
+
+// Subscribers reports how many snapshot consumers are currently
+// registered. Sessions uses it to avoid reclaiming a sim that a client
+// is still streaming from.
+func (s *Sim) Subscribers() int { return int(s.subs.Load()) }
+
+// SubmitIntent records role's latest intent. It returns nil when the
+// intent was accepted or coalesced away, ErrRateLimited when the role
+// is over the contract's cap, ErrUnknownRole for a role the sim does not
+// know, and ErrStopped when the loop is not running.
+//
+// It blocks until the loop has processed the intent, so a caller cannot
+// observe its own intent half-applied.
+func (s *Sim) SubmitIntent(role Role, in Intent) error {
+	reply := make(chan error, 1)
+	select {
+	case s.cmds <- intentReq{role: role, in: in, reply: reply}:
+	case <-s.done:
+		return ErrStopped
+	}
+	select {
+	case err := <-reply:
+		return err
+	case <-s.done:
+		return ErrStopped
+	}
+}
 
 // trySendLatest delivers snap without blocking: if the mailbox is full the
 // stale value is dropped so the subscriber always sees the newest snapshot.

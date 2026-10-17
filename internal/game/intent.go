@@ -1,0 +1,44 @@
+// Input intents: the players' intentions, never game state.
+// The contract is settled in
+// tasks/closed/define-input-intent-contract.md.
+package game
+
+import "errors"
+
+// Role identifies which set of controls an intent drives. Roles are
+// rolled per round (implement-round-flow-and-replay.md); today the
+// server maps the owner seat to the pilot and the guest seat to the
+// gunner.
+type Role string
+
+const (
+	RolePilot  Role = "pilot"
+	RoleGunner Role = "gunner"
+)
+
+// Intent is a player's latest intention. Only the fields for the
+// player's role are meaningful: Rotate and Thrust for the pilot, Fire
+// for the gunner.
+type Intent struct {
+	// Seq is the client's monotonic counter; it orders posts that the
+	// network may reorder or duplicate.
+	Seq uint64
+	// Rotate is the pilot's turn axis: -1, 0, or +1.
+	Rotate int
+	// Thrust is the pilot's thrust button.
+	Thrust bool
+	// Fire is the gunner's fire button.
+	Fire bool
+}
+
+// neutral is the intent applied when a role's latest intent has gone
+// stale: every continuous action stops.
+var neutral = Intent{}
+
+// Errors reported by SubmitIntent. ErrStopped is declared with the loop.
+var (
+	// ErrRateLimited means the role exceeded the contract's coarse cap.
+	ErrRateLimited = errors.New("intent rate exceeded")
+	// ErrUnknownRole means the role is not one the sim understands.
+	ErrUnknownRole = errors.New("unknown role")
+)

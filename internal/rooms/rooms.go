@@ -31,6 +31,14 @@ const (
 	SeatGuest Seat = "guest"
 )
 
+// Lobby states reported in Status.State.
+const (
+	// StateWaiting means the lobby is missing at least one player.
+	StateWaiting = "waiting"
+	// StateReady means both players are present.
+	StateReady = "ready"
+)
+
 const (
 	// idBytes is the entropy in per-instance guest tokens; base64url
 	// without padding yields 12-char strings.
@@ -185,9 +193,9 @@ func (l *lobby) present(now time.Time) bool {
 func (l *lobby) status(now time.Time, seat Seat) Status {
 	owner := l.owner.present(now)
 	guest := l.guest.present(now)
-	state := "waiting"
+	state := StateWaiting
 	if owner && guest {
-		state = "ready"
+		state = StateReady
 	}
 	return Status{Seat: seat, State: state, OwnerPresent: owner, GuestPresent: guest}
 }

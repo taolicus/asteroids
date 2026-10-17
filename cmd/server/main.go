@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/taolicus/asteroids/internal/game"
 	"github.com/taolicus/asteroids/internal/identity"
 	"github.com/taolicus/asteroids/internal/rooms"
 	"github.com/taolicus/asteroids/internal/server"
@@ -49,8 +50,14 @@ func main() {
 	// lifetime. Individual lobbies never own goroutines.
 	go mgr.Start(context.Background())
 
+	// Per-room sims, reclaimed on the same idle grace as the lobby so the
+	// two lifecycles agree. The input endpoint starts a sim on first use.
+	sessions := game.NewSessions(rooms.IdleGrace)
+	go sessions.StartSweeper(context.Background())
+	defer sessions.StopAll()
+
 	mux := http.NewServeMux()
-	mux.Handle("/api/", server.Handler(mgr, identity.NewIssuer([]byte(key))))
+	mux.Handle("/api/", server.Handler(mgr, identity.NewIssuer([]byte(key)), sessions))
 	mux.Handle("/", http.FileServer(http.FS(web.FS)))
 
 	log.Printf("serving on %s", addr)
