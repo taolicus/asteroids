@@ -52,8 +52,15 @@ type intentResponse struct {
 // alongside the static frontend; paths here are full request paths
 // because ServeMux does not strip the mount point.
 //
-// sessions owns the per-room simulations that intents are submitted to.
+// sessions owns the per-room simulations that intents are submitted to
+// and that the snapshot stream subscribes to.
 func Handler(m *rooms.Manager, iss *identity.Issuer, sessions *game.Sessions) http.Handler {
+	return handlerWithTimings(m, iss, sessions, defaultStreamTimings)
+}
+
+// handlerWithTimings builds the routes with explicit stream cadences, so
+// tests can shorten the keepalive and presence intervals.
+func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.Sessions, tm streamTimings) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/identities", func(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +189,10 @@ func Handler(m *rooms.Manager, iss *identity.Issuer, sessions *game.Sessions) ht
 			return
 		}
 		writeJSON(w, http.StatusOK, intentResponse{Role: string(role), Seq: in.Seq})
+	})
+
+	mux.HandleFunc("GET /api/lobby/{id}/events", func(w http.ResponseWriter, r *http.Request) {
+		serveEvents(w, r, m, iss, sessions, tm)
 	})
 
 	return mux

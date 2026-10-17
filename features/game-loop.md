@@ -77,3 +77,35 @@ This lifecycle is interim: nothing owns round start yet, so a ready
 lobby's sim starts on its first accepted intent.
 `implement-round-flow-and-replay.md` will own an explicit start and
 stop, which the endpoint and payloads will not notice.
+
+## Snapshot stream
+
+`GET /api/lobby/{id}/events` streams the room's snapshots as
+Server-Sent Events. The wire format and the client's interpolation are
+settled in `tasks/closed/define-snapshot-format-and-interpolation.md`;
+the DTO lives in `internal/server/stream.go`.
+
+- Same player token as the lobby endpoints, which also refreshes
+  presence; the lobby must be ready. Every rejection is a real HTTP
+  status (401/404/409) because the stream has not started yet. Presence
+  is refreshed before the ready check, so a player reconnecting after
+  their own presence lapsed is not refused by their own absence.
+- An open stream counts as presence and refreshes it on a 5 s timer,
+  inside the 15 s `rooms.PresenceTTL`, so a streaming player never looks
+  absent.
+- Subscribing starts the room's sim if needed; a sim with a subscriber
+  is never reclaimed. On disconnect the subscription is cancelled and
+  the room keeps running.
+- Frames are `event: snapshot`, `id: <seq>`, one compact-JSON `data`
+  line. The first event is the first snapshot the subscription delivers,
+  so a late join gets full state with a real `seq` and there is no
+  synthetic-snapshot race. A `: ping` comment is written every 15 s when
+  snapshots pause.
+- The DTO is the protocol surface, not `game.Snapshot`. It currently
+  carries `seq`, `tick`, `arena`, `phase`, and `ship`, with `rocks` and
+  `shots` present but empty; `lives`, `score`, and the survival timer
+  arrive with the asteroids and round-flow tasks, and `phase` stays
+  `"playing"` until round flow owns the round.
+- Writes carry a deadline, so a client that stops reading is
+  disconnected instead of pinning its handler. The sim's capacity-1
+  mailbox already means a slow reader can never block the simulation.
