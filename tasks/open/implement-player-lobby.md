@@ -71,10 +71,22 @@ smoke test against the running binary (identity → owner → guest →
 ready, 409/401/404, owner-absent guest waiting, index served). CI runs
 the suite with `-race`.
 
+Deployed to `https://asteroids.pifia.net`:
+
+- `LOBBY_KEY` set on the host via a systemd drop-in and
+  `/etc/asteroids.env` (`features/deployment.md`); verified loaded into
+  the running process.
+- `deploy.sh` shipped the lobby build; the public index serves the
+  lobby markup with no create button, and the live API exercises
+  identity → owner → guest → ready, 409 full, and 404 malformed.
+- Restart check: after `systemctl restart asteroids`, a credential
+  issued before the restart still claims the owner seat, while a bad
+  signature falls back to guest — the link and credential are stable
+  across restarts.
+
 Outstanding:
 
 - The two-browser check cannot run on this device (no browser). It
-  stays open until the lobby is opened in two browsers.
-- `LOBBY_KEY` is documented but not yet set on the host. Set it (see
-  `features/deployment.md`) before deploying the lobby build.
+  stays open until the lobby is opened in two browsers and the owner/
+  guest states are confirmed visually. This is the only criterion left.
 

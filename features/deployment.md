@@ -11,6 +11,9 @@ place.
   `Environment=ADDR=127.0.0.1:18081`,
   `ExecStart=/home/dev/asteroids/asteroids`, `Restart=always`,
   `RestartSec=3`.
+- Drop-in `/etc/systemd/system/asteroids.service.d/lobby-key.conf` adds
+  `EnvironmentFile=/etc/asteroids.env`, which holds `LOBBY_KEY` (see
+  below). The main unit is left untouched.
 - nginx vhost `asteroids.pifia.net`: TLS via Let's Encrypt/certbot,
   reverse proxy to `127.0.0.1:18081`, and an `/events` location with
   `proxy_buffering off` for the upcoming SSE stream. HTTP redirects to
@@ -46,28 +49,26 @@ the systemd unit provides; otherwise it falls back to `-port`/`PORT`
 
 `LOBBY_KEY` signs player credentials (`features/rooms.md`). It must be
 stable across restarts and identical for every process serving the same
-lobby links, so it lives on the host rather than in the repository.
+lobby links, so it lives on the host rather than in the repository. It
+is configured on `asteroids.pifia.net`: `/etc/asteroids.env` (root,
+`0600`) holds it and the drop-in above makes systemd load it.
 
-The unit reads it from an environment file owned by root:
-
-```
-printf 'LOBBY_KEY=%s\n' "$(head -c 32 /dev/urandom | base64 | tr -d '=+/')" \
-  > /etc/asteroids.env
-chmod 600 /etc/asteroids.env
-```
-
-and the unit references it:
+To reproduce, create the file and reference it from a drop-in:
 
 ```
+sudo sh -c 'umask 077; printf "LOBBY_KEY=%s\n" \
+  "$(head -c 32 /dev/urandom | base64 | tr -d "=+/")" > /etc/asteroids.env'
+sudo mkdir -p /etc/systemd/system/asteroids.service.d
+sudo tee /etc/systemd/system/asteroids.service.d/lobby-key.conf <<'EOF'
+[Service]
 EnvironmentFile=/etc/asteroids.env
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart asteroids
 ```
-
-then `systemctl daemon-reload && systemctl restart asteroids`.
 
 If `LOBBY_KEY` is missing the process starts anyway with a random key
 and logs a warning; owner credentials then stop verifying after each
-restart (lobbies fall back to guest-only, links still resolve). Set the
-key before the first deploy that ships the lobby.
+restart (lobbies fall back to guest-only, links still resolve).
 
 ## Notes
 
