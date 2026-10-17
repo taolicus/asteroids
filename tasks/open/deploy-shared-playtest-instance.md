@@ -47,5 +47,12 @@ Verified on the host:
 
 Remaining before this can close:
 
-- After gameplay lands (this task also waits on touch controls), run
-  the two-device playtest that the main acceptance criteria require.
+- Run the two-device playtest that the main acceptance criteria require.
+
+The build deployed on 2026-10-17 (`0359e62`, the touch controls and the
+intent poster) is live and serving `controls.js` from the public host, so
+the playtest can start. What the playtest has to settle: the round flow and
+replay on two devices, the touch feel the controls task could not verify
+(dead zone, band reach, the fire button, no accidental zoom or page scroll),
+and the gunner's relative aim — whether "drag the direction you want to
+point" is learnable without instruction.
