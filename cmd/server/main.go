@@ -54,7 +54,6 @@ func main() {
 	// two lifecycles agree. The input endpoint starts a sim on first use.
 	sessions := game.NewSessions(rooms.IdleGrace)
 	go sessions.StartSweeper(context.Background())
-	defer sessions.StopAll()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.Handler(mgr, identity.NewIssuer([]byte(key)), sessions))
