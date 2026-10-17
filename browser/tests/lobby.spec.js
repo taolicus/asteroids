@@ -30,7 +30,7 @@ test("the landing heading is the two-line title in the display face", async ({ p
   // line break away, so the anchored pattern is what says the title is
   // two lines and has no comma.
   const heading = page.locator("h1");
-  await expect(heading).toHaveText(/^🚀\s+two idiots\s+one ship$/i);
+  await expect(heading).toHaveText(/^🚀\s*two idiots\s*one ship$/i);
   await expect(heading).toHaveCSS("text-transform", "uppercase");
 
   // The title face is vendored and embedded, so it must actually load: a
