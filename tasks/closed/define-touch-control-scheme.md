@@ -12,7 +12,9 @@ field to the gunner payload, implemented in
 together with the fire direction. Point-and-go pilot steering later added
 one optional field to the pilot payload, implemented in
 `tasks/closed/implement-point-and-go-pilot-steering.md` and recorded
-there too.
+there too. The gunner's one stick later changed only the controls —
+the aim and `fire` fields it writes were already there — as recorded in
+`tasks/closed/implement-gunner-pull-to-fire.md`.
 
 Each player holds one role for a round and is on their own device, so a
 screen only ever shows its own role's controls. The client already knows
@@ -59,7 +61,7 @@ deadband is wide enough to make the nose sloppy. The server has the stick
 direction and the heading in the same tick, so it turns exactly, with no
 prediction to tune and no duplicated turn rate on the client.
 
-## Gunner: an independent turret and a fire button
+## Gunner: an independent turret on one stick
 
 The turret aims independently of the ship's heading.
 
@@ -69,8 +71,20 @@ not an absolute one. The band sits below the arena, so a touch in it cannot
 name a point inside the arena — an absolute mapping could only ever aim
 downward and could not reach the full 360°. The aim is now the drag direction
 from the touch origin, and it is an *angle* rather than a target, so only the
-mouse path re-derives the aim as the ship moves. The rest of this section is
-as delivered; the bullets below stand as the record of the decision.
+mouse path re-derives the aim as the ship moves.
+
+Amended again after the first playtest
+(`tasks/closed/implement-gunner-pull-to-fire.md`): the fire button is gone.
+Two targets for one thumb means the thumb leaves the aim to take the shot, so
+the band holds a single stick and the pull's *distance* is the trigger — the
+same two-stage stick the pilot has, with the aim on the direction and the
+fire on the second stage. Because the aim is the drag direction and not the
+drag distance, pulling further along the same ray fires without moving the
+turret. The wire does not move: the gunner payload already carried `aim` and
+`fire`, so this is a control change only.
+
+The bullets below stand as the record of the original decision, except where
+the amendments above supersede them.
 
 - Aim: a touch in the aim band points the turret at the touched position —
   the angle from the ship's drawn position to that point, in the wire's
@@ -80,10 +94,11 @@ as delivered; the bullets below stand as the record of the decision.
   the last aim on its keepalive cadence, so "drag to aim, then hold fire"
   works with one thumb, and a silent client's turret falls back to the
   nose. Nose-forward is also what an absent `aim` means.
-- Fire is a held button within the reach of the aiming thumb. Holding it
-  fires at the weapon's rate that the settled rules already define. It is a
-  separate control rather than firing on the aim touch so the gunner can
-  line up a shot without spending it, and so aim and fire can be held on
+- Fire (superseded: the stick's pull distance fires now, and there is no
+  button) was a held button within the reach of the aiming thumb. Holding
+  it fires at the weapon's rate that the settled rules already define. It
+  is a separate control rather than firing on the aim touch so the gunner
+  can line up a shot without spending it, and so aim and fire can be held on
   two thumbs at once.
 - The gunner renders its own aim hint under the touch immediately; the
   turret itself comes from the stream like the ship, one render delay
@@ -125,6 +140,6 @@ inventing a second one.
   the band; the band has a minimum height of about 140 px so a thumb has
   room. Portrait is the primary case; the same stack fits landscape because
   the arena shrinks.
-- The band lays out per role: the pilot's whole band is the stick zone; the
-  gunner's band is the aim zone with the fire button placed within thumb
-  reach of it.
+- The band lays out per role: both roles' whole band is their stick zone —
+  the pilot's for heading and throttle, the gunner's for aim and trigger.
+  No part of the band is a button.

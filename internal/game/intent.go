@@ -32,7 +32,8 @@ type Intent struct {
 	Steer *float64
 	// Thrust is the pilot's thrust button.
 	Thrust bool
-	// Fire is the gunner's fire button.
+	// Fire is the gunner's trigger: the held fire input, from the stick's
+	// pull or from the mouse and space bar.
 	Fire bool
 	// Aim is the gunner's turret direction in radians, an absolute
 	// world angle. It is optional: without one the turret follows the

@@ -49,13 +49,15 @@ Remaining before this can close:
 
 - Run the two-device playtest that the main acceptance criteria require.
 
-The deployed build (most recently the pilot's point-and-go stick,
-`tasks/closed/implement-point-and-go-pilot-steering.md`) is live and
-serving `controls.js` from the host, so
-the playtest can begin. What the playtest has to settle: the round flow and
-replay on two devices, the touch feel the controls tasks could not verify
-(dead zone, band reach, the fire button, no accidental zoom or page scroll),
-the gunner's relative aim — whether "drag the direction you want to point"
-is learnable without instruction — and whether the pilot's point-and-go
-stick reads as a heading in the hand, including how far the throttle push
-has to travel.
+The deployed build (most recently the pilot's point-and-go stick and the
+gunner's one stick, `tasks/closed/implement-point-and-go-pilot-steering.md`
+and `tasks/closed/implement-gunner-pull-to-fire.md`) is live and serving
+`controls.js` from the host, so the playtest can begin. What the playtest has
+to settle: the round flow and replay on two devices, the touch feel the
+controls tasks could not verify (dead zone, band reach, no accidental zoom or
+page scroll), whether the gunner's relative aim — "drag the direction you
+want to point" — is learnable without instruction, whether pull-to-fire
+fires when the player means it to and not while merely aiming, and whether
+the pilot's point-and-go stick reads as a heading in the hand. Both sticks
+put a second stage on the pull distance, so how far that pull has to travel
+is part of the same question.

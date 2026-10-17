@@ -1,11 +1,13 @@
 // Input for the two copilots, plus the poster that sends what it produces.
 //
-// The scheme is settled in tasks/closed/define-touch-control-scheme.md: a
-// floating stick for the pilot, a floating aim stick and a fire button for
-// the gunner, and the same intents from a keyboard and mouse. The pilot's
-// stick is point-and-go — the drag direction is the heading the nose
-// should point at, and the server turns the ship onto it — so the client
-// sends a direction rather than fighting the stream's lag to derive one.
+// The scheme is settled in tasks/closed/define-touch-control-scheme.md:
+// one floating stick per role, plus the same intents from a keyboard and
+// mouse. Both sticks are point-and-go with a second stage — the drag
+// direction is the heading the nose should point at (the pilot) or the aim
+// (the gunner), and the pull distance past a threshold is the throttle or
+// the trigger. The pilot's heading is sent as a direction rather than the
+// client deriving one, because the server has the stick and the heading at
+// the same instant and the client would have to fight the stream's lag.
 // The stick geometry, the aim geometry, and the poster are pure, so the
 // browser suite evaluates them directly; only attach() touches the DOM.
 //
@@ -21,9 +23,10 @@
   // Starting values from the settled scheme. The radius is a fraction of
   // the zone's shorter side, so a thumb gets the same throw in portrait
   // and landscape; it is large enough that the pull *distance* means
-  // something, which is what makes it a throttle.
+  // something, which is what the second stage needs.
   const DEAD_ZONE = 0.3; // fraction of the stick radius
   const THROTTLE_ZONE = 0.55; // past this the pilot also burns
+  const FIRE_ZONE = 0.55; // past this the gunner also fires
   const STICK_RADIUS = 0.35; // fraction of the zone's shorter side
 
   // --- stick and aim geometry ---
@@ -54,6 +57,19 @@
     const r = Math.hypot(dx, dy);
     if (r <= DEAD_ZONE * radius) return { steer: null, thrust: false };
     return { steer: aimFromDrag(dx, dy), thrust: r > THROTTLE_ZONE * radius };
+  }
+
+  // stickAim reads the gunner's floating stick the same way: the drag
+  // direction is the turret's aim, in the wire's convention (0 along +X),
+  // and the drag distance is the trigger — a light push lines up a shot
+  // without spending it, a firm one also fires. Inside the dead zone
+  // neither is sent, so the remembered aim stands and a resting thumb
+  // cannot spin the gun. Because the aim is the drag *direction*, pushing
+  // further along the same ray fires without moving the turret.
+  function stickAim(dx, dy, radius) {
+    const r = Math.hypot(dx, dy);
+    if (r <= DEAD_ZONE * radius) return { aim: null, fire: false };
+    return { aim: aimFromDrag(dx, dy), fire: r > FIRE_ZONE * radius };
   }
 
   // aimFromDrag is a direction in the wire's radians, 0 along +X, so "up"
@@ -169,12 +185,12 @@
 
   // --- DOM binding ---
   //
-  // The band holds one floating stick per role (only one is ever shown),
-  // a shared base/knob pair, and the gunner's fire button. Everything is
-  // positioned against the band, so a touch anywhere in it is in reach.
+  // The band holds one floating stick per role (only one is ever shown)
+  // and a shared base/knob pair. Everything is positioned against the
+  // band, so a touch anywhere in it is in reach.
 
   function attach(opts) {
-    const { band, stick, aim, base, knob, fire, canvas, onIntent } = opts;
+    const { band, stick, aim, base, knob, canvas, onIntent } = opts;
 
     let role = "";
     let ship = null;
@@ -195,8 +211,8 @@
       onIntent(payload, urgent === true);
     }
 
-    // hideHint hides the floating base and knob, which the pilot loses on
-    // release and the gunner loses when the finger lifts.
+    // hideHint hides the floating base and knob, which both roles lose
+    // when the finger lifts.
     function hideHint() {
       base.hidden = true;
       knob.hidden = true;
@@ -302,9 +318,16 @@
       emit(true); // a press and a release both land at once
     }
 
+    // The gunner holds one stick: its direction is the aim and its
+    // distance is the trigger. The mouse and the space bar set fireHeld
+    // instead, so a desktop player fires without the stick; the two paths
+    // merge by OR and write the same wire fields.
     function gunnerPayload() {
-      const p = { fire: fireHeld };
-      if (aimValue !== null) p.aim = aimValue;
+      const d = aimPad.drag;
+      const s = d ? stickAim(d.dx, d.dy, d.radius) : { aim: null, fire: false };
+      const p = { fire: s.fire || fireHeld };
+      const aim = s.aim !== null ? s.aim : aimValue;
+      if (aim !== null) p.aim = aim;
       return p;
     }
 
@@ -313,27 +336,18 @@
       () => role === "gunner",
       (pad) => {
         const d = pad.drag;
-        // Past the dead zone the drag direction is the aim; inside it the
-        // remembered aim stands, so a resting thumb does not spin the gun.
-        if (Math.hypot(d.dx, d.dy) > DEAD_ZONE * d.radius) {
+        const s = stickAim(d.dx, d.dy, d.radius);
+        // Past the dead zone the drag direction is the aim, and it is
+        // remembered for after the finger lifts; inside it the remembered
+        // aim stands, so a resting thumb does not spin the gun.
+        if (s.aim !== null) {
           mousePoint = null;
-          setAim(aimFromDrag(d.dx, d.dy));
+          aimValue = s.aim;
         }
+        emit();
       },
-      () => {
-        // The aim is remembered after the finger lifts: nothing to send.
-      }
+      () => emit(true) // the lift stops the fire at once; the aim stands
     );
-
-    fire.addEventListener("pointerdown", (e) => {
-      if (role !== "gunner") return;
-      e.preventDefault();
-      fire.setPointerCapture(e.pointerId);
-      setFire(true);
-    });
-    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
-      fire.addEventListener(type, () => setFire(false));
-    }
 
     // --- keyboard, and the mouse over the arena ---
 
@@ -412,7 +426,6 @@
         hideHint();
         stick.hidden = next !== "pilot";
         aim.hidden = next !== "gunner";
-        fire.hidden = next !== "gunner";
         emit(true);
       },
       // setView keeps the latest interpolated view, for the mouse aim and
@@ -439,10 +452,12 @@
   return {
     DEAD_ZONE,
     THROTTLE_ZONE,
+    FIRE_ZONE,
     STICK_RADIUS,
     attach,
     fitStick,
     stickSteer,
+    stickAim,
     aimFromDrag,
     aimAngle,
     shortestWrapped,

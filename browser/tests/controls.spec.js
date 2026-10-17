@@ -1,6 +1,6 @@
 // Browser tests for the controls and the layout that holds them.
 //
-// The quantization, the aim geometry, and the poster are driven through
+// The stick geometry, the aim geometry, and the poster are driven through
 // the page's own Controls module, so these test the shipped code. The
 // end-to-end cases seat two players, drive the pads, and read the intent
 // posts the server actually receives.
@@ -81,6 +81,30 @@ test.describe("the control arithmetic", () => {
     expect(out.diagonal.thrust).toBe(true);
     expect(out.down.steer).toBeCloseTo(Math.PI / 2, 9);
     expect(out.down.thrust).toBe(true);
+  });
+
+  test("reads the gunner's stick as an aim and a trigger", async ({ page }) => {
+    const out = await page.evaluate(() => ({
+      rest: Controls.stickAim(0, 0, 100),
+      insideDeadZone: Controls.stickAim(29, 0, 100),
+      lightUp: Controls.stickAim(0, -40, 100),
+      firmUp: Controls.stickAim(0, -60, 100),
+      left: Controls.stickAim(-60, 0, 100),
+      // Further out along the same ray: the distance moves the trigger,
+      // not the aim.
+      farUp: Controls.stickAim(0, -90, 100),
+    }));
+    expect(out.rest).toEqual({ aim: null, fire: false });
+    expect(out.insideDeadZone).toEqual({ aim: null, fire: false });
+    // The drag direction is the aim in the wire's convention, so straight
+    // up is -pi/2 whatever the ship and turret are doing.
+    expect(out.lightUp.aim).toBeCloseTo(-Math.PI / 2, 9);
+    expect(out.lightUp.fire).toBe(false); // a light pull lines up a shot
+    expect(out.firmUp.aim).toBeCloseTo(-Math.PI / 2, 9);
+    expect(out.firmUp.fire).toBe(true); // a firm pull also fires
+    expect(out.left.aim).toBeCloseTo(Math.PI, 9);
+    expect(out.farUp.aim).toBeCloseTo(out.lightUp.aim, 9);
+    expect(out.farUp.fire).toBe(true);
   });
 
   test("keeps a long drag pointing the same way", async ({ page }) => {
@@ -189,12 +213,12 @@ test.describe("the control band", () => {
     const roles = await ready(page, players);
 
     await expect(roles.pilot.locator("#stick")).toBeVisible();
-    await expect(roles.pilot.locator("#fire")).toBeHidden();
     await expect(roles.pilot.locator("#aim")).toBeHidden();
 
     await expect(roles.gunner.locator("#aim")).toBeVisible();
-    await expect(roles.gunner.locator("#fire")).toBeVisible();
     await expect(roles.gunner.locator("#stick")).toBeHidden();
+    // One stick per role: the gunner's separate fire button is gone.
+    await expect(roles.gunner.locator("#fire")).toHaveCount(0);
   });
 
   test("the pilot's stick posts a heading and a throttle, and the release posts neutral", async ({
@@ -250,7 +274,7 @@ test.describe("the control band", () => {
     await expectLast(posts, { rotate: 0, thrust: false }, "the release reaches the server neutral");
   });
 
-  test("the gunner aims, fires, and keeps the aim after the finger lifts", async ({
+  test("the gunner aims and fires from one stick, and the aim stands after the finger lifts", async ({
     page,
     players,
   }) => {
@@ -258,32 +282,52 @@ test.describe("the control band", () => {
     const gunner = roles.gunner;
     const posts = intents(gunner);
 
-    // Drag straight up in the aim band: the aim is -pi/2.
     const box = await gunner.locator("#aim").boundingBox();
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
+    // The zones are fractions of the stick radius, which is a fraction of
+    // the band's shorter side, so push by those fractions rather than by
+    // pixels that only fit one viewport.
+    const push = await gunner.evaluate(() => {
+      const r = document.getElementById("aim").getBoundingClientRect();
+      const radius = Controls.STICK_RADIUS * Math.min(r.width, r.height);
+      return {
+        light: ((Controls.DEAD_ZONE + Controls.FIRE_ZONE) / 2) * radius,
+        firm: ((Controls.FIRE_ZONE + 1) / 2) * radius,
+      };
+    });
+
+    // Straight up is -pi/2 on the wire; a light pull aims without firing.
     await gunner.mouse.move(cx, cy);
     await gunner.mouse.down();
-    await gunner.mouse.move(cx, cy - 60, { steps: 4 });
+    await gunner.mouse.move(cx, cy - push.light, { steps: 2 });
     await expect
-      .poll(() => posts.some((p) => Math.abs(p.aim + Math.PI / 2) < 1e-9), {
-        message: "the aim reaches the server in radians",
-      })
+      .poll(
+        () => {
+          const last = posts[posts.length - 1];
+          return Boolean(last) && Math.abs(last.aim + Math.PI / 2) < 1e-6 && last.fire === false;
+        },
+        { message: "a light pull reaches the server as an aim, without firing" },
+      )
       .toBe(true);
 
-    // The aim is remembered: firing after the lift carries it.
-    await gunner.mouse.up();
-    const fire = await gunner.locator("#fire").boundingBox();
-    await gunner.mouse.move(fire.x + fire.width / 2, fire.y + fire.height / 2);
-    await gunner.mouse.down();
+    // Pushing further along the same ray fires without moving the turret.
+    await gunner.mouse.move(cx, cy - push.firm, { steps: 4 });
     await expect
-      .poll(() => posts.some((p) => p.fire === true && Math.abs(p.aim + Math.PI / 2) < 1e-9), {
-        message: "fire carries the remembered aim",
-      })
+      .poll(
+        () => {
+          const last = posts[posts.length - 1];
+          return Boolean(last) && Math.abs(last.aim + Math.PI / 2) < 1e-6 && last.fire === true;
+        },
+        { message: "a firm pull reaches the server as an aim and a shot" },
+      )
       .toBe(true);
 
+    // The lift stops the trigger at once and leaves the aim where it was.
     await gunner.mouse.up();
     await expectLast(posts, { fire: false }, "the release stops firing");
+    const last = posts[posts.length - 1];
+    expect(Math.abs(last.aim + Math.PI / 2)).toBeLessThan(1e-6);
   });
 
   test("the pilot can also fly from the keyboard", async ({ page, players }) => {

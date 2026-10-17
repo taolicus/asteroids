@@ -28,20 +28,21 @@ a time and shows only that role's controls.
   where the stick does, and the ship is turned server-side (below). A drag
   past the stick radius is clamped to the ring, which keeps a long drag
   pointing the same way.
-- **Gunner — the same stick, aiming.** The drag direction from the touch
-  origin is the aim, in the wire's radians with 0 along +X, so the turret
-  reaches every angle. Inside the dead zone the remembered aim stands, so a
-  resting thumb cannot spin the gun. The aim survives the finger lifting,
-  and firing carries it.
-- **Gunner — a fire button.** `#fire` is pinned to the corner of the band,
-  within thumb reach, and holds while pressed.
+- **Gunner — the same stick, aiming and firing.** One stick, as for the
+  pilot: the drag direction from the touch origin is the aim, in the wire's
+  radians with 0 along +X, so the turret reaches every angle, and the drag
+  *distance* is the trigger. A light pull aims without spending a shot, a
+  pull past the fire zone also fires, and inside the dead zone neither is
+  sent, so the remembered aim stands and a resting thumb cannot spin the
+  gun. The aim survives the finger lifting; the lift only stops the fire.
 
-The stick radius is 35% of the band's shorter side — a thumb's throw, and
-enough range for the distance to carry the throttle. The dead zone is 30% of
-that radius and the throttle zone 55%; all three are starting values. The
-radius is a fraction, not a pixel count, so the throw is the same in
-portrait and landscape; the band's own minimum height is what keeps it
-reachable on a phone.
+Both sticks share a radius of 35% of the band's shorter side — a thumb's
+throw, and enough range for the distance to carry the second stage. The
+dead zone is 30% of that radius for both, and the pilot's throttle zone and
+the gunner's fire zone are 55%, kept as separate constants so either can be
+tuned alone. All four are starting values. The radius is a fraction, not a
+pixel count, so the throw is the same in portrait and landscape; the band's
+own minimum height is what keeps it reachable on a phone.
 
 The band follows the round's roll: `app.js` reads the role off the stream
 each frame (`pilot` against its own `seat`) and hands it to `setRole()`,
@@ -84,6 +85,11 @@ follows the ship even when the pointer is still. Both paths write the same
 band is the gunner's surface. The point-to-ship direction is measured across
 the wraparound seam, so aiming at a wrapped copy points the right way.
 
+Because the aim is the drag *direction* and not the drag *distance*, one
+stick can carry both: pulling further along a ray fires without moving the
+turret. That is what makes a single stick enough, and why the fire button
+was dropped — a second target for the same thumb costs the aim to reach it.
+
 ## Keyboard and mouse
 
 The desktop fallback emits the same intents — a second emitter, not a second
@@ -94,7 +100,8 @@ contract:
   `steer` wins over the keys' `rotate` while it is out of its dead zone. A
   window blur clears them.
 - Gunner: space or the left mouse button fires; the mouse over the arena
-  aims.
+  aims. That fire merges with the stick's trigger by OR, so a desktop
+  player fires without the stick and a touch player never needs the button.
 
 ## The poster
 

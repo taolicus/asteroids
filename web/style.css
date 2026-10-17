@@ -75,8 +75,8 @@ body.playing #arena {
   aspect-ratio: auto;
 }
 
-/* The control band: one floating stick per role, a shared base and knob,
-   and the gunner's fire button. */
+/* The control band: one floating stick per role, and a shared base and
+   knob. */
 #controls {
   position: relative;
   width: 100%;
@@ -112,20 +112,6 @@ body.playing #arena {
   height: 44px;
   border: 1px solid #4d5c8a;
   background: #263150;
-}
-
-#fire {
-  position: absolute;
-  right: 1rem;
-  bottom: 1rem;
-  width: 88px;
-  height: 88px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 0.9rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  touch-action: none;
 }
 
 #hud {
