@@ -34,16 +34,16 @@ var ShipTuning = struct {
 
 // Vec2 is a 2D position or velocity in sim units.
 type Vec2 struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
+	X float64
+	Y float64
 }
 
 // Ship is the shared ship's kinematic state. Both players steer this one
 // ship. Heading is in radians, 0 pointing along +X.
 type Ship struct {
-	Pos     Vec2    `json:"pos"`
-	Vel     Vec2    `json:"vel"`
-	Heading float64 `json:"heading"`
+	Pos     Vec2
+	Vel     Vec2
+	Heading float64
 }
 
 // newShip returns the ship at its spawn state: arena centre, no motion,
