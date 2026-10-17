@@ -40,6 +40,9 @@ Turn rooms into player-owned lobbies per the settled decisions in
 - The index page shows a lobby with a share affordance and no create
   button; opening someone else's link joins as guest.
 - Manual two-browser check on a device with browsers (this one has none).
+  *Superseded: now automated by the Playwright suite in
+  `add-browser-tests.md`, which drives two isolated browser contexts
+  against the real server.*
 
 ## Outcome
 
@@ -86,7 +89,15 @@ Deployed to `https://asteroids.pifia.net`:
 
 Outstanding:
 
-- The two-browser check cannot run on this device (no browser). It
-  stays open until the lobby is opened in two browsers and the owner/
-  guest states are confirmed visually. This is the only criterion left.
+- None. The two-browser check that this device could not perform is
+  now covered by the Playwright suite
+  (`add-browser-tests.md`/`features/testing.md`): two isolated browser
+  contexts exercise the owner/guest seats, identity persistence across
+  reload, the full and malformed-link error states, and clipboard copy
+  against the same assets the deployed binary serves. Production was
+  also exercised over HTTPS with curl (identity → owner → guest →
+  ready, 409/404, and a credential surviving a service restart).
+- The browser suite also found a real bug on its first run: hidden
+  views were still rendered because author `display` rules override
+  `[hidden]`. Fixed and deployed (`web/style.css`).
 
