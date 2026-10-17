@@ -1,14 +1,18 @@
 # Client Renderer
 
 The browser draws the shared arena from the SSE snapshot stream. The
-frontend is three plain scripts, loaded in order (`web/index.html`); there
+frontend is four plain scripts, loaded in order (`web/index.html`); there
 is no bundler or build step. `web/web.go` embeds all of them.
 
 - `web/interp.js` — pure interpolation: no DOM, no network. Exposes
   `Interp` (and `module.exports`, so Node can read it) with
   `wrappedDelta`, `lerpWrapped`, `lerpAngle`, and `SnapshotBuffer`.
 - `web/renderer.js` — canvas drawing only. Exposes `Renderer.create`.
-- `web/app.js` — the lobby flow, the snapshot stream, and the render loop.
+- `web/controls.js` — the control band and the intent poster
+  (`features/controls.md`). Exposes `Controls.attach`, `createPoster`, and
+  the quantization and aim helpers, which are require()-able too.
+- `web/app.js` — the lobby flow, the snapshot stream, the render loop, and
+  the wiring between them, the renderer, and the controls.
 
 ## Interpolation
 

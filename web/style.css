@@ -42,6 +42,92 @@ h1 {
   touch-action: none;
 }
 
+/* While a round is up the page stops scrolling: the arena takes the space
+   the HUD and the control band leave, and the band keeps a thumb's worth
+   of height. resize() sizes the canvas from the stage box. */
+#stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+body.playing main {
+  height: 100dvh;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  overflow: hidden;
+}
+
+body.playing h1 {
+  display: none;
+}
+
+body.playing #stage {
+  /* The basis is 0, not the canvas's own height: the canvas is sized from
+     this box, so letting the content feed the basis would be circular. */
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+body.playing #arena {
+  width: auto;
+  max-width: none;
+  aspect-ratio: auto;
+}
+
+/* The control band: one floating stick per role, a shared base and knob,
+   and the gunner's fire button. */
+#controls {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  min-height: 140px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#stick,
+#aim {
+  position: absolute;
+  inset: 0;
+}
+
+#pad-base,
+#pad-knob {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+#pad-base {
+  border: 1px solid #3d4f7a;
+  background: #161b2a80;
+}
+
+#pad-knob {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #4d5c8a;
+  background: #263150;
+}
+
+#fire {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  touch-action: none;
+}
+
 #hud {
   display: flex;
   gap: 1.5rem;

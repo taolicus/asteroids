@@ -151,6 +151,9 @@ Clients send intentions, never state; the contract is settled in
 - Intents are latest-state. The loop keeps one intent slot per role and
   samples it every tick; a post whose `seq` is not newer is coalesced
   away rather than erroring.
+- The client end of this is the poster in `features/controls.md`: one `seq`
+  per client, a change posted at once, the held intent re-posted at 10 Hz,
+  and a release posted urgently so the coalescing floor cannot delay it.
 - `SubmitIntent` hands the intent to the loop through the command
   channel and waits for the reply, so the loop remains the only owner of
   simulation state and a caller never observes its own intent

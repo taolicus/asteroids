@@ -40,6 +40,20 @@ cases without a second player; only the end-to-end cases need the guest.
 The round screens end with a game-over case that serves the owner page
 canned snapshots (see below).
 
+The controls spec (`browser/tests/controls.spec.js`) has three halves. The
+arithmetic cases run `page.evaluate` against the page's own `Controls`
+module: the quantization (dead zone, both axes, the diagonal), the drag
+clamp, the aim from a drag, the absolute aim across the wraparound seam,
+and the poster (a change posted at once, a release skipping the coalescing
+floor, the 10 Hz tick, and a 401 stopping it). The end-to-end cases seat two
+players, drive the pads with real pointer input, and read the intent posts
+the server receives: the two roles see only their own controls, a pilot drag
+arrives as turn-and-thrust and the release as neutral, a gunner drag arrives
+as `aim` in radians and a later fire carries the remembered aim, and the
+keyboard flies the pilot. The layout cases set a phone and a landscape
+viewport and assert the arena is square, the band has its height, and the
+page does not scroll.
+
 Run locally:
 
 ```
@@ -67,12 +81,12 @@ deterministically.
 
 One browser test does stub the stream, and it is the deliberate exception
 worth knowing about: the game-over panel cannot be reached from a real
-round in test time (a stationary ship is only hit by chance, and controls
-do not exist yet to steer into a rock on purpose), so the round screens
-case `page.route`s `/events` and feeds the owner page canned game-over
-snapshots. Everything downstream of the stream — the panel, the stats,
-the replay POST — is the shipped code; only the data is canned. Do not use
-this pattern to test anything the real server can produce.
+round in test time (a round runs until three lives are lost, which takes
+minutes even when a player steers into rocks on purpose), so the round
+screens case `page.route`s `/events` and feeds the owner page canned
+game-over snapshots. Everything downstream of the stream — the panel, the
+stats, the replay POST — is the shipped code; only the data is canned. Do
+not use this pattern to test anything the real server can produce.
 
 ### Device constraint
 

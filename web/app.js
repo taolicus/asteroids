@@ -1,18 +1,26 @@
 const API = "/api";
 const POLL_MS = 2000;
+const POST_MS = 100; // the settled 10 Hz poster
+const MAX_ARENA = 640; // the largest the arena is drawn
 const IDENTITY_KEY = "asteroids-identity";
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
 
 const $ = (id) => document.getElementById(id);
 
-// The arena canvas is the game surface; size it to its CSS box now and on
-// every resize.
+// The arena canvas is the game surface. Its size comes from the stage the
+// flex layout gives it, so the page never scrolls mid-round.
 const canvas = $("arena");
 
 function resize() {
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
+  const box = $("stage").getBoundingClientRect();
+  const side = Math.min(box.width, box.height, MAX_ARENA);
+  if (side > 0) {
+    canvas.style.width = `${side}px`;
+    canvas.style.height = `${side}px`;
+  }
+  canvas.width = Math.round(canvas.clientWidth * devicePixelRatio);
+  canvas.height = Math.round(canvas.clientHeight * devicePixelRatio);
 }
 
 addEventListener("resize", resize);
@@ -189,22 +197,50 @@ function startGame() {
 
   $("arena").hidden = false;
   $("hud").hidden = false;
+  $("controls").hidden = false;
   $("round").hidden = true;
+  // The lobby panel is the room link and the seat; a playing round does
+  // not need it, and on a phone its height is the arena's.
+  show("game");
+  document.body.classList.add("playing");
   resize();
 
-  game = {
+  const g = {
     lobbyId: session.lobbyId,
     token: session.token,
     buffer: new Interp.SnapshotBuffer(),
     renderer: Renderer.create(canvas),
     controller: null,
+    poster: null,
+    postTimer: 0,
+    posting: false,
     raf: 0,
     stopped: false,
     connected: false,
     retryMs: 0,
     timer: 0,
   };
-  game.raf = requestAnimationFrame(frame);
+  game = g;
+  g.poster = Controls.createPoster({
+    lobbyId: g.lobbyId,
+    token: g.token,
+    onGone: () => {
+      // The seat is gone: re-enter, exactly as the stream handler does.
+      if (game !== g) return;
+      stopGame();
+      openLobby(g.lobbyId);
+    },
+    onNotReady: () => {
+      // The room is waiting again: poll until it is ready.
+      if (game !== g) return;
+      stopGame();
+      startPolling();
+    },
+  });
+  // The poster starts paused: nothing is sent until a round is playing and
+  // the player is holding a control.
+  g.poster.pause();
+  g.raf = requestAnimationFrame(frame);
   connectStream();
 }
 
@@ -213,11 +249,18 @@ function stopGame() {
   game.stopped = true;
   cancelAnimationFrame(game.raf);
   clearTimeout(game.timer);
+  clearInterval(game.postTimer);
+  if (game.poster) game.poster.stop();
   if (game.controller) game.controller.abort();
   game = null;
+  controls.setRole("");
+  document.body.classList.remove("playing");
   $("arena").hidden = true;
   $("hud").hidden = true;
+  $("controls").hidden = true;
   $("round").hidden = true;
+  // Back to the room panel; a poll or a re-entry fills it in again.
+  show("lobby");
 }
 
 function frame(now) {
@@ -228,8 +271,32 @@ function frame(now) {
   if (view) {
     g.renderer.render(view, now);
     updateHud(view);
+    controls.setView(view);
+    controls.setRole(roleName(view).toLowerCase());
+    controls.refresh();
+    setPosting(view.phase === "playing" && controls.live());
   }
   g.raf = requestAnimationFrame(frame);
+}
+
+// setPosting runs the 10 Hz poster only while a round is playing and the
+// player is holding something, so an idle client sends nothing at all and
+// a held control never goes stale. Outside a round the poster is paused
+// rather than stopped, so a control held across the boundary survives.
+function setPosting(on) {
+  const g = game;
+  if (!g || g.posting === on) return;
+  g.posting = on;
+  if (!on) {
+    clearInterval(g.postTimer);
+    g.postTimer = 0;
+    g.poster.pause();
+    return;
+  }
+  g.poster.resume();
+  g.postTimer = setInterval(() => {
+    if (game === g && g.posting) g.poster.tick();
+  }, POST_MS);
 }
 
 function updateHud(view) {
@@ -469,6 +536,24 @@ $("play-again").addEventListener("click", async () => {
   } catch {
     // No action: the snapshot stream is the authority on the round.
   }
+});
+
+// --- controls ---
+//
+// The band is wired once. Which role is live is the round's roll, so the
+// handlers are permanent and ask for the current role; setRole() below is
+// what follows the roll.
+const controls = Controls.attach({
+  band: $("controls"),
+  stick: $("stick"),
+  aim: $("aim"),
+  base: $("pad-base"),
+  knob: $("pad-knob"),
+  fire: $("fire"),
+  canvas,
+  onIntent: (payload, urgent) => {
+    if (game && game.poster) game.poster.set(payload, urgent);
+  },
 });
 
 start();
