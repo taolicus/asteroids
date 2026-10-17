@@ -3,6 +3,10 @@
 Settled for `implement-room-create-join.md` and later per-room work
 (inputs, SSE, rounds). Rendering details stay with the client tasks.
 
+Note: identity, capacity, expiry, and role assignment are revised by
+`player-owned-lobby-rooms.md`; where the two disagree, that document
+wins.
+
 ## Identity and links
 
 - Room ID: 9 bytes from `crypto/rand`, base64url without padding
@@ -13,8 +17,9 @@ Settled for `implement-room-create-join.md` and later per-room work
 
 ## Roles and capacity
 
-- Exactly two players: the first joiner is pilot, the second gunner.
-  No spectators in the MVP.
+- Exactly two players, one seat each. Seating is identity-based and
+  roles are rolled per round (revised — see
+  `player-owned-lobby-rooms.md`). No spectators in the MVP.
 - Third joiner: "room is full" (409), shown as a readable state.
 - Unknown room ID: "room not found" (404), shown as a readable state.
 
@@ -36,8 +41,8 @@ Settled for `implement-room-create-join.md` and later per-room work
 - A disconnect never ends the round. The sim continues with the
   remaining player's intents: with no pilot there is no rotation or
   thrust; with no gunner there is no fire.
-- Reconnecting before expiry resumes the same role and the round in
-  progress; the round is not restarted.
+- Reconnecting before expiry resumes their seat and the role of the
+  round in progress; the round is not restarted.
 
 ## Expiry and cleanup
 
@@ -45,9 +50,11 @@ Settled for `implement-room-create-join.md` and later per-room work
   period, so an accidental refresh or brief network drop does not
   destroy it.
 - Hard cap: a room is deleted 30 min after creation regardless of
-  activity (rounds last 1–3 min).
+  activity (rounds last 1–3 min). *Dropped by
+  `player-owned-lobby-rooms.md`: idle reclamation is enough, and an age
+  cap would kill a lobby someone is waiting in.*
 - A waiting room persists while at least one player is connected, so
-  the pilot can wait for the gunner to open the shared link.
+  the owner can wait for a guest to open the shared link.
 - Cleanup runs periodically; an expired room releases all its state
   — including stopping its `Sim` once rounds exist.
 

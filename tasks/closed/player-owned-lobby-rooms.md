@@ -2,7 +2,8 @@
 
 Settled for `implement-player-lobby.md`. Supersedes the index-page and
 identity parts of `implement-room-create-join.md`, and revises the
-identity, capacity, and expiry sections of `resolve-room-lifecycle.md`.
+identity, capacity, expiry, and role sections of
+`resolve-room-lifecycle.md`.
 
 ## The link is permanent
 
@@ -27,18 +28,22 @@ identity, capacity, and expiry sections of `resolve-room-lifecycle.md`.
   is legitimately waiting in. Memory is instead bounded by concurrently
   connected players.
 
-## Seats follow identity, not arrival order
+## Seats and roles
 
-- The owner is always the pilot and a guest is always the gunner, in
-  whatever order they arrive. "First joiner is pilot" no longer applies,
-  because a guest must never be able to take the pilot seat of someone
-  else's room.
-- This requires the owner's identity to be verifiable without the
-  instance: the credential is self-verifying (HMAC-signed by a key from
-  configuration). A client with a valid owner identity for the lobby gets
-  the pilot seat; anyone else arriving through the link gets the guest
-  seat; a client whose identity is missing or invalid is treated as a
-  guest.
+- Two seats per room: the owner seat, bound to the owner's identity, and
+  the guest seat. Seats are what identity protects — a guest can never
+  take the owner seat of someone else's room, which is why seating is
+  identity-based rather than arrival-ordered ("first joiner is pilot" no
+  longer applies).
+- Roles are independent of seats: at each round start the server rolls
+  pilot/gunner 50/50 for the two players. Every round is a fresh roll, so
+  roles may repeat or flip between rounds. The roll is authoritative,
+  announced to both clients before the round begins, and fixed for the
+  whole round; a player reconnecting mid-round is told that round's roles.
+- The identity requirement stands: the credential is self-verifying
+  (HMAC-signed by a key from configuration). A client with a valid owner
+  identity gets the owner seat; anyone else arriving through the link gets
+  the guest seat; a missing or invalid identity is treated as a guest.
 - Consequence: the signing key must be stable across restarts (systemd
   environment/file). If it changes, existing owner credentials stop
   verifying and their lobbies fall back to guest-only — the link still
@@ -46,6 +51,8 @@ identity, capacity, and expiry sections of `resolve-room-lifecycle.md`.
   and link.
 - Guests need no durable identity: the join-issued per-instance token is
   enough for reconnect within the instance.
+- Letting players choose or swap roles is deliberately deferred; see
+  `role-choice-and-swap.md`.
 
 ## Busy
 
@@ -57,6 +64,6 @@ identity, capacity, and expiry sections of `resolve-room-lifecycle.md`.
 
 ## Guest capacity
 
-- Two players per room, as before: one owner (pilot) and one guest
-  (gunner). A second guest arriving while the guest seat is taken sees
-  the room as full, a readable state.
+- Two players per room, as before: one owner and one guest. A second
+  guest arriving while the guest seat is taken sees the room as full, a
+  readable state.

@@ -18,9 +18,10 @@ Turn rooms into player-owned lobbies per the settled decisions in
 - Room instances become ephemeral: created lazily under a lobby ID and
   reclaimed after the idle window. Drop the age cap. Extend the sweep
   and its tests accordingly.
-- Seats follow identity: the owner is always pilot, a guest always
-  gunner, regardless of arrival order; an unknown or invalid identity is
-  treated as a guest.
+- Seats follow identity: the owner holds the owner seat and a guest the
+  guest seat, regardless of arrival order; an unknown or invalid identity
+  is treated as a guest. Roles are *not* tied to seats — they are rolled
+  at each round start (`implement-round-flow-and-replay.md`).
 - The index page is the player's own lobby: no create button, shows the
   room, the permanent link, and a share affordance using the browser
   share API with a copy fallback.
@@ -30,8 +31,8 @@ Turn rooms into player-owned lobbies per the settled decisions in
 ## Acceptance criteria
 
 - Tests cover: identity signing and verification (valid, tampered, wrong
-  key); owner gets pilot and guest gets gunner in either arrival order;
-  an invalid identity is treated as a guest; a reclaimed room is
+  key); owner and guest get their respective seats in either arrival
+  order; an invalid identity is treated as a guest; a reclaimed room is
   recreated under the same lobby ID on the next use; a second guest sees
   the room as full.
 - The same link keeps working after the instance is reclaimed and after a
