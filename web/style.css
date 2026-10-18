@@ -109,9 +109,10 @@ body.playing #stage {
 }
 
 body.playing #arena {
-  width: auto;
-  max-width: none;
-  aspect-ratio: auto;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 1 / 1;
+  align-self: start;
 }
 
 /* The control band: one floating stick per role, and a shared base and
