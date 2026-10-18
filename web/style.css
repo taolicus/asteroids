@@ -90,6 +90,7 @@ body.playing main {
   gap: 0.5rem;
   padding: 0.5rem;
   overflow: hidden;
+  justify-content: flex-start;
 }
 
 body.playing h1 {
@@ -101,6 +102,7 @@ body.playing #stage {
      this box, so letting the content feed the basis would be circular. */
   flex: 1 1 0;
   min-height: 0;
+  align-self: stretch;
 }
 
 body.playing #arena {
