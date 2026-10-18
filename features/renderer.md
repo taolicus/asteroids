@@ -71,7 +71,11 @@ time the stream connects, which resets the `seq` watermark.
 The landing heading — the rocket and the title, one `h1` — and the lobby
 panel are hidden while a round plays, so a phone spends that height on the
 arena; the arena and HUD are unhidden when the round starts and hidden
-again on exit.
+again on exit. While playing, `main` is a `100dvh` column with no gap or
+top padding and the stage pins the arena to its top edge (`place-items:
+start stretch`), so the HUD and the control band sit directly under the
+canvas and stay on screen; `resize()` writes the arena's exact size from
+the stage box as before, and the CSS is only the unmeasured fallback.
 
 Roles are rolled per round, so each player is told theirs rather than
 assuming one: `app.js` compares the stream's `pilot` with the session's

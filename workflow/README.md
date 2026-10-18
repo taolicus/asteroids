@@ -26,3 +26,4 @@ already tracked elsewhere.
 - `workflow/commit-policy.md`
 - `workflow/incremental-task-scoping.md`
 - `workflow/execution-and-stopping.md`
+- `workflow/verify-what-the-user-sees.md`

@@ -90,7 +90,6 @@ body.playing main {
   gap: 0;
   padding: 0 0.5rem 0.5rem;
   overflow: hidden;
-  justify-content: flex-start;
 }
 
 body.playing h1 {
@@ -99,21 +98,22 @@ body.playing h1 {
 
 body.playing #stage {
   /* The basis is 0, not the canvas's own height: the canvas is sized from
-     this box, so letting the content feed the basis would be circular. */
+     this box, so letting the content feed the basis would be circular.
+     The arena is pinned to the top of the stage — the leftover height is
+     for the HUD and the control band, which must stay on screen. */
   flex: 1 1 0;
   min-height: 0;
-  align-self: stretch;
-  justify-self: stretch;
   display: grid;
   place-items: start stretch;
 }
 
+/* Fallback only: resize() writes an exact size in px while a round runs.
+   The base rule's 640px cap is lifted so the arena can use the full
+   stage width when no size has been measured yet. */
 body.playing #arena {
   width: 100%;
-  height: auto;
-  max-width: 100%;
+  max-width: none;
   aspect-ratio: 1 / 1;
-  align-self: start;
 }
 
 /* The control band: one floating stick per role, and a shared base and
