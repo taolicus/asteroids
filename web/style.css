@@ -110,7 +110,7 @@ body.playing #stage {
 
 body.playing #arena {
   width: 100%;
-  max-width: 640px;
+  max-width: 100%;
   aspect-ratio: 1 / 1;
   align-self: start;
 }
