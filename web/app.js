@@ -18,6 +18,9 @@ function resize() {
   if (side > 0) {
     canvas.style.width = `${side}px`;
     canvas.style.height = `${side}px`;
+  } else {
+    canvas.style.width = "100%";
+    canvas.style.height = "auto";
   }
   canvas.width = Math.round(canvas.clientWidth * devicePixelRatio);
   canvas.height = Math.round(canvas.clientHeight * devicePixelRatio);
