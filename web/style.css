@@ -105,7 +105,7 @@ body.playing #stage {
   align-self: stretch;
   justify-self: stretch;
   display: grid;
-  place-items: start center;
+  place-items: start stretch;
 }
 
 body.playing #arena {
