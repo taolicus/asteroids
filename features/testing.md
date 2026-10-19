@@ -44,16 +44,18 @@ canned snapshots (see below).
 
 The lobby spec (`browser/tests/lobby.spec.js`) covers the room panel: the
 identity and its share link survive a reload, the lobby shows a waiting
-spinner while it waits, a guest entering the link gets the same room and
-the same link, a third player is told the room is full and can get to
-their own room from that error, a malformed link shows the error screen,
-and copy reaches the clipboard.
+spinner while it waits, a guest opening a link to a room whose owner is away
+is told so (with no share box at all) and can leave for their own room,
+address bar `?r=` and all, a third player is told the room is full and can
+get to their own room from that error, a malformed link shows the error
+screen, and copy reaches the clipboard.
 
 The presence spec (`browser/tests/presence.spec.js`) covers what a player
 is told when the other one leaves: mid-round the "Friend disconnected"
 badge appears and a refused intent does not drop the player back to the
 lobby, and at game over `Play again` is replaced by the waiting line and
-returns when the friend does. It serves canned SSE (see the stub note
+the way out to the player's own room, both of which change back when the
+friend does. It serves canned SSE (see the stub note
 below) because a real absence takes the 15 s presence TTL plus the 5 s
 presence tick; the frames it serves are exactly what the server writes,
 and the server's production of them is covered by the Go tests.

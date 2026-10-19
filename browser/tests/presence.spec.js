@@ -108,6 +108,17 @@ test("a game over with the friend gone waits instead of offering a dead button",
   await expect(page.locator("#play-again")).toBeHidden();
   // The panel tells the story, so the over-arena badge stays out of it.
   await expect(page.locator("#friend-note")).toBeHidden();
+  // Waiting cannot end without the friend, so the panel offers the one
+  // thing that does not need them.
+  await expect(page.locator("#round-leave")).toBeVisible();
+
+  // Leaving is a real navigation to the player's own room: a marker set
+  // on the old document is gone once the new one has booted.
+  await page.evaluate(() => {
+    window.stillHere = true;
+  });
+  await page.locator("#round-leave").click();
+  await expect.poll(() => page.evaluate(() => window.stillHere || false)).toBe(false);
 });
 
 test("the replay button comes back when the friend does", async ({ page, players }) => {
@@ -120,5 +131,6 @@ test("the replay button comes back when the friend does", async ({ page, players
   await expect(page.locator("#round-title")).toHaveText("Game over");
   await expect(page.locator("#play-again")).toBeVisible();
   await expect(page.locator("#friend-wait")).toBeHidden();
+  await expect(page.locator("#round-leave")).toBeHidden();
   await expect(page.locator("#friend-note")).toBeHidden();
 });

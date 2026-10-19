@@ -93,31 +93,43 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
   instance the way entering does (404). A stale guest token (the seat has
   since been taken by someone else) is refused too, so a late beacon
   cannot mark the current holder absent.
-- `path` is the relative share link (`/?r=<id>`), so no public base URL
-  is configured.
+- `path` is the relative share link (`/?r=<id>`), so no public base URL is
+  configured. It describes the room that was entered; the client builds its
+  share box from its own identity instead, so a guest is never shown the
+  owner's link as their own.
 
 ## Frontend
 
 `web/app.js` is the lobby. `/` shows the player's own lobby (identity
 created on first visit) with the permanent link and a share affordance: the
-Web Share API when available, otherwise copy-to-clipboard. Both seats see
-the same panel — the link and a "Waiting for friend" line — because nothing
-in it needs to say who created the room or who is waiting: the link works
-for anyone, and the stream is what says the round is starting. The waiting
-line is accompanied by a small spinning indicator that runs only while the
-panel is on screen. `/?r=<id>` enters
-that lobby: the owner credential claims the owner seat, everyone else joins
-as guest (a stored per-instance guest token reconnects to the same seat).
-There is no create button and no home screen. The client polls status every
-2s while the lobby is waiting for its second player; once both seats are
-filled it stops polling, opens the live snapshot stream, and renders the
-shared arena (`features/renderer.md`). It re-enters when an instance has
-been reclaimed (404) or a guest seat was lost (401), and returns to
-polling when the stream itself refuses to open because the room is
-waiting again (409). Full (409) and malformed-link (404) cases render
-readable states, never a broken screen — and the error screen offers
-"Go to my room" (`/`), because reloading would keep the bad link in the
-URL and land on the same error. The UI is covered by browser tests
+Web Share API when available, otherwise copy-to-clipboard. The share box is
+built from the player's own identity and never from the room the page was
+opened into: a player always carries their own permanent link, whatever
+seat they hold elsewhere.
+
+`/?r=<id>` enters that lobby: the owner credential claims the owner seat,
+everyone else joins as guest (a stored per-instance guest token reconnects
+to the same seat). There is no create button and no home screen. The owner
+of a waiting room sees the link and a "Waiting for friend" line; a guest in
+an away room sees the away notice instead — the room is someone else's and
+its owner is not here — with no share box at all, because the room is not
+theirs to share. Each waiting panel carries a small spinning indicator that
+runs only while it is on screen.
+
+Waiting cannot end without the other player, so leaving is one behaviour:
+the away notice, the round panel, and the error screen all navigate to `/`,
+which drops any other player's `?r=` from the address bar and leaves the
+seat they held to the `pagehide` beacon.
+
+The client polls status every 2s while the lobby is waiting for its second
+player; once both seats are filled it stops polling, opens the live snapshot
+stream, and renders the shared arena (`features/renderer.md`). It re-enters
+when an instance has been reclaimed (404) or a guest seat was lost (401),
+and returns to polling when the stream itself refuses to open because the
+room is waiting again (409). Full (409) and malformed-link (404) cases render
+readable states, never a broken screen — and the error screen offers "Go to
+my room" (`/`), because reloading would keep the bad link in the URL and land
+on the same error. The UI is covered by browser tests
 (`features/testing.md`).
 
 ### Disconnects and absence
@@ -135,7 +147,9 @@ client reads it as `game.opponentPresent` and reacts on the next frame:
   not fly on a stale held input.
 - At game over, `Play again` is replaced by "Waiting for your friend to
   come back…" — a restart needs both seats, so the button would only
-  409 — and comes back the moment presence does.
+  409 — and comes back the moment presence does. While it waits, "Go to my
+  room" (`/`) sits beside it, so a player left on that panel is not stuck
+  with a reload as their only exit.
 - An intent 409 (the room is not ready) means a seat is absent, so it
   marks the absence instead of dropping the player back to the lobby
   panel mid-round. The poster stops on that 409 and `revive()`s when the

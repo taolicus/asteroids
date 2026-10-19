@@ -4,9 +4,10 @@
 // renderer tests; see fixtures.js for how a "second browser" is a second
 // isolated context.
 //
-// The panel itself is only the share link, so what the owner and the guest
-// can be told apart by here is the link they carry, not any copy: the
-// transition into a round is covered by the renderer and controls specs.
+// The owner's panel is the share link and the waiting line; a guest in
+// someone else's room gets the away notice instead, so the two seats are
+// told apart by which panel they get. The transition into a round is
+// covered by the renderer and controls specs.
 import { test, expect, shareLink } from "./fixtures.js";
 
 test("index page is the owner's lobby, not a create screen", async ({ page }) => {
@@ -14,6 +15,9 @@ test("index page is the owner's lobby, not a create screen", async ({ page }) =>
 
   await expect(page.locator("#lobby")).toBeVisible();
   await expect(page.locator("#share .hint")).toHaveText("Share your link with a friend:");
+  // The landing page is the player's own room: not the away notice, and
+  // not a create screen.
+  await expect(page.locator("#guest")).toBeHidden();
   // The panel carries no ownership copy to drift out of date.
   await expect(page.locator("#seat")).toHaveCount(0);
   await expect(page.locator("#state")).toHaveCount(0);
@@ -65,17 +69,32 @@ test("the identity and its link survive a reload", async ({ page }) => {
   expect(await shareLink(page)).toBe(before);
 });
 
-test("a guest entering the link gets the same room and the same link", async ({ page, players }) => {
-  await page.goto("/");
-  const link = await shareLink(page);
+test("a guest opening an away room is told, and can go to their own", async ({ players }) => {
+  // A well-formed link whose owner has never been here: the room exists
+  // lazily and holds this visitor alone, so the host is away by definition.
+  const link = "/?r=bbbbbbbbbbbb";
 
   const guest = await players();
   await guest.page.goto(link);
 
-  await expect(guest.page.locator("#share .hint")).toHaveText("Share your link with a friend:");
-  // The guest may already be playing, so read the panel's contents rather
-  // than asserting the panel is on screen.
-  await expect(guest.page.locator("#share-link")).toHaveValue(link);
+  // The room is not theirs, so there is no share box: the page says what
+  // is happening and waits.
+  await expect(guest.page.locator("#guest")).toBeVisible();
+  await expect(guest.page.locator("#guest-waiting")).toHaveText(/Waiting for your friend/);
+  await expect(guest.page.locator("#guest-spinner")).toBeVisible();
+  await expect(guest.page.locator("#lobby")).toBeHidden();
+  await expect(guest.page.locator("#share")).toBeHidden();
+  await expect(guest.page.locator("#error")).toBeHidden();
+
+  // Leaving lands on their own room, with their own permanent link, and
+  // the other player's ?r= gone from the address bar.
+  await guest.page.locator("#guest-leave").click();
+
+  await expect(guest.page.locator("#lobby")).toBeVisible();
+  await expect(guest.page.locator("#guest")).toBeHidden();
+  await expect(guest.page.locator("#share")).toBeVisible();
+  expect(guest.page.url()).not.toContain("?r=");
+  await shareLink(guest.page);
 });
 
 test("a third player is told the room is full", async ({ page, players }) => {
@@ -109,8 +128,9 @@ test("a malformed link shows a readable error", async ({ page }) => {
 
   await expect(page.locator("#error")).toBeVisible();
   await expect(page.locator("#error-message")).toHaveText("This link doesn't point to a lobby.");
-  // The lobby view must be gone, not shown behind the error.
+  // Neither waiting panel may be left behind the error.
   await expect(page.locator("#lobby")).toBeHidden();
+  await expect(page.locator("#guest")).toBeHidden();
 });
 
 test("copy puts the share link on the clipboard", async ({ page, context }) => {

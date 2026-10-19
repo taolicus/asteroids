@@ -173,9 +173,8 @@ async function openLobby(lobbyId) {
     lobbyId,
     seat: data.seat,
     token: data.seat === "owner" ? me.token : data.token || credential,
-    path: data.path,
   };
-  render(data);
+  render();
 
   // A ready lobby plays; otherwise keep polling for the second player.
   if (isReady(data)) startGame();
@@ -208,7 +207,7 @@ async function poll() {
     // Transient network errors: keep polling.
     return;
   }
-  render(data);
+  render();
   if (isReady(data)) startGame();
 }
 
@@ -291,8 +290,9 @@ function stopGame() {
   $("controls").hidden = true;
   $("round").hidden = true;
   $("friend-note").hidden = true;
-  // Back to the room panel; a poll or a re-entry fills it in again.
-  show("lobby");
+  // Back to the waiting panel for this seat; a poll or a re-entry fills it
+  // in again.
+  show(waitingView());
 }
 
 function frame(now) {
@@ -372,6 +372,7 @@ function updateRoundPanel(view, g) {
     $("round-stats").hidden = true;
     $("friend-wait").hidden = true;
     $("play-again").hidden = true;
+    $("round-leave").hidden = true;
     return;
   }
   setText($("round-title"), "Game over");
@@ -379,10 +380,12 @@ function updateRoundPanel(view, g) {
     `Round ${view.round} · Score ${view.score} · Survived ${view.time.toFixed(1)}s`);
   $("round-stats").hidden = false;
   // A restart needs both players, so while the friend is gone the button
-  // would only 409. Say what is actually happening instead, and give the
-  // button back the moment presence returns.
+  // would only 409. Say what is actually happening instead, give the
+  // button back the moment presence returns, and offer the one thing that
+  // waiting on its own does not: the way back to the player's own room.
   $("friend-wait").hidden = g.opponentPresent;
   $("play-again").hidden = !g.opponentPresent;
+  $("round-leave").hidden = g.opponentPresent;
 }
 
 function setText(el, text) {
@@ -513,30 +516,32 @@ function handleFrame(frame, g) {
 
 // --- rendering ---
 
-// render shows the room panel, which is just the share link: both seats
-// see the same thing, and nothing in it says who owns what or who is here.
-// The shared stream, not this panel, is what says the round is starting.
-function render(data) {
-  show("lobby");
-  $("share-link").value = `${location.origin}${data.path}`;
+// waitingView is the panel a player has while the room is not ready: their
+// own share link, or — for a guest in somebody else's room — the notice
+// that the room's owner is away.
+function waitingView() {
+  return session && session.seat === "guest" ? "guest" : "lobby";
+}
+
+// render fills in and shows that panel. The share box is always built from
+// the player's own identity, never from the link the page was opened with:
+// that link belongs to whoever owns the room, and is not the visitor's to
+// hand out. The shared stream, not this panel, is what says the round is
+// starting.
+function render() {
+  const view = waitingView();
+  if (view === "lobby") {
+    $("share-link").value = `${location.origin}/?r=${identity.lobbyId}`;
+  }
+  show(view);
 }
 
 function show(view) {
-  for (const v of ["lobby", "error"]) $(v).hidden = v !== view;
-  // The spinner runs only while the lobby is on screen.
-  if (view === "lobby") startWaiting();
-  else stopWaiting();
-}
-
-// startWaiting and stopWaiting drive the lobby's spinner: it appears while
-// the room is waiting and disappears when the round starts or the error
-// screen shows.
-function startWaiting() {
-  $("spinner").hidden = false;
-}
-
-function stopWaiting() {
-  $("spinner").hidden = true;
+  for (const v of ["lobby", "guest", "error"]) $(v).hidden = v !== view;
+  // The spinner runs only while a view is waiting on the other player:
+  // the owner's room or somebody else's.
+  $("spinner").hidden = view !== "lobby";
+  $("guest-spinner").hidden = view !== "guest";
 }
 
 function showError(message) {
@@ -585,11 +590,20 @@ $("copy").addEventListener("click", async () => {
 
 $("retry").addEventListener("click", () => location.reload());
 
-// The way out of an error is the player's own room: reloading keeps the
-// bad link in the URL and lands on the same error again.
-$("home").addEventListener("click", () => {
+// --- leaving ---
+
+// leaveRoom goes to the player's own room, clearing any other player's
+// ?r= from the address bar on the way. It is the way out of someone
+// else's link, of an error (reloading would keep the bad link in the URL
+// and land on the same error) and of a round whose friend is gone. The
+// pagehide beacon releases the seat held here as the navigation starts.
+function leaveRoom() {
   location.href = "/";
-});
+}
+
+$("guest-leave").addEventListener("click", leaveRoom);
+$("round-leave").addEventListener("click", leaveRoom);
+$("home").addEventListener("click", leaveRoom);
 
 // --- round flow ---
 

@@ -48,6 +48,9 @@
            restart needs both players, so the button would only 409. -->
       <p id="friend-wait" hidden>Waiting for your friend to come back…</p>
       <button id="play-again" hidden>Play again</button>
+      <!-- Waiting has no end without the friend, so the panel also offers
+           the one thing left to do. -->
+      <button id="round-leave" hidden>Go to my room</button>
     </section>
 
     <section id="lobby" hidden>
@@ -61,6 +64,16 @@
       </div>
       <p id="waiting" class="hint">Waiting for friend</p>
       <div id="spinner" class="spinner" aria-hidden="true"></div>
+    </section>
+
+    <!-- A visitor who opened someone else's link and found the room's owner
+         away. The room is not theirs, so there is no share box: what is
+         actually happening, and the way back to their own room. -->
+    <section id="guest" hidden>
+      <p class="tagline">You're in someone else's room, and they aren't here right now.</p>
+      <p id="guest-waiting" class="hint">Waiting for your friend to come back…</p>
+      <div id="guest-spinner" class="spinner" aria-hidden="true"></div>
+      <button id="guest-leave">Go to my room</button>
     </section>
 
     <section id="error" hidden>
