@@ -97,23 +97,28 @@ body.playing h1 {
 }
 
 body.playing #stage {
-  /* The basis is 0, not the canvas's own height: the canvas is sized from
-     this box, so letting the content feed the basis would be circular.
-     The arena is pinned to the top of the stage — the leftover height is
-     for the HUD and the control band, which must stay on screen. */
-  flex: 1 1 0;
-  min-height: 0;
+  /* Content-sized: the arena, then the stats, then the control band,
+     which takes whatever is left. The arena is measured from the viewport
+     in resize(), never from this box, so nothing here is circular. */
+  flex: 0 0 auto;
   display: grid;
-  place-items: start stretch;
+  place-items: start center;
 }
 
-/* Fallback only: resize() writes an exact size in px while a round runs.
+/* Fallback only: while a round runs resize() writes an exact size in px.
    The base rule's 640px cap is lifted so the arena can use the full
    stage width when no size has been measured yet. */
 body.playing #arena {
   width: 100%;
   max-width: none;
   aspect-ratio: 1 / 1;
+}
+
+/* The band takes the height the arena leaves, so a thumb gets every
+   pixel the round does not need; its 140px floor is what resize() sizes
+   the arena against. */
+body.playing #controls {
+  flex: 1 1 auto;
 }
 
 /* The control band: one floating stick per role, and a shared base and

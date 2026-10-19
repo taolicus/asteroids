@@ -122,17 +122,24 @@ with one `seq` counter per poster:
 
 ## Layout
 
-While a round is up the page stops scrolling (`body.playing`): the arena
-takes the space the HUD and the band leave, the band keeps at least 140 px
-of height for a thumb, and the lobby panel is hidden so a phone spends its
-height on the arena.
+While a round is up the page stops scrolling (`body.playing`): the arena,
+then the stats, then the band tile the screen, the band takes whatever
+height the arena leaves and never drops below 140 px, and the lobby panel
+is hidden so a phone spends its height on the arena. The stage is
+content-sized (`flex: 0 0 auto`), which is what puts the stats directly
+under the canvas, and the band grows (`flex: 1 1 auto`) into the leftover.
 
-The arena is always square and is sized in `resize()` from the stage box.
-It is measured in script rather than expressed in CSS because "the largest
-square that fits the leftover space" over-constrains one axis: a definite
-height with `aspect-ratio` and a `max-width` clamp distorts the canvas
-instead of shrinking it.
+The arena is always square and is sized in `resize()` from the viewport,
+not from the stage: the largest square that leaves the stats and the
+band's floor their space, with the round panel's height part of the
+budget while that panel is up (so a game-over screen shrinks the arena
+rather than pushing the band off the bottom). It is measured in script
+rather than expressed in CSS because "the largest square that fits"
+over-constrains one axis: a definite height with `aspect-ratio` and a
+`max-width` clamp distorts the canvas instead of shrinking it. Being
+measured against the band's floor rather than its current height is also
+what avoids a circular measurement now that the band grows.
 
 Portrait is the intended layout; landscape is supported by the arena
-shrinking to the leftover height. The fallback is Chromium on a 390x844
+shrinking to what the height leaves. The fallback is Chromium on a 390x844
 phone viewport and on 844x390, both asserted in the browser suite.

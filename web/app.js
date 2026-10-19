@@ -12,9 +12,32 @@ const $ = (id) => document.getElementById(id);
 // flex layout gives it, so the page never scrolls mid-round.
 const canvas = $("arena");
 
+// resize mirrors the arena's box into the canvas backing store. In the
+// lobby the box is the stage's square; while a round runs the arena takes
+// the largest square that still leaves the stats and the control band
+// their space, because those must stay on screen and the band is what the
+// player's thumbs land on. The band grows into whatever the arena leaves
+// over, so it is its floor — not its current height — that the arena is
+// measured against, and the round panel's height is part of the budget
+// while it is up.
 function resize() {
-  const box = $("stage").getBoundingClientRect();
-  const side = Math.min(box.width, box.height, MAX_ARENA);
+  const stage = $("stage");
+  const main = stage.parentElement;
+  const box = stage.getBoundingClientRect();
+  let side = Math.min(box.width, box.height, MAX_ARENA);
+  if (document.body.classList.contains("playing")) {
+    const mainStyle = getComputedStyle(main);
+    const padding = parseFloat(mainStyle.paddingTop) + parseFloat(mainStyle.paddingBottom);
+    const band = $("controls");
+    const floor = parseFloat(getComputedStyle(band).minHeight) || band.offsetHeight;
+    const panel = $("round");
+    const spare = main.clientHeight
+      - $("hud").offsetHeight
+      - floor
+      - padding
+      - (panel.hidden ? 0 : panel.offsetHeight);
+    side = Math.min(box.width, spare, MAX_ARENA);
+  }
   if (side > 0) {
     canvas.style.width = `${side}px`;
     canvas.style.height = `${side}px`;
@@ -325,7 +348,13 @@ function roleName(view) {
 // are still correct while the screen is up.
 function updateRoundPanel(view) {
   const paused = view.phase === "waiting" || view.phase === "over";
-  $("round").hidden = !paused;
+  if ($("round").hidden === paused) {
+    $("round").hidden = !paused;
+    // The panel spends the arena's height budget, so re-measure: the
+    // arena gives up the height rather than the panel pushing the band
+    // off the bottom of the screen.
+    resize();
+  }
   if (!paused) return;
 
   const role = roleName(view);

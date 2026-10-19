@@ -351,12 +351,15 @@ test.describe("the control band layout", () => {
 
     const phone = await page.evaluate(() => {
       const arena = document.getElementById("arena").getBoundingClientRect();
+      const hud = document.getElementById("hud").getBoundingClientRect();
       const band = document.getElementById("controls").getBoundingClientRect();
       const scroll = document.scrollingElement;
       return {
         arenaWidth: arena.width,
         arenaHeight: arena.height,
         arenaBottom: arena.bottom,
+        hudTop: hud.top,
+        hudBottom: hud.bottom,
         bandTop: band.top,
         bandBottom: band.bottom,
         bandHeight: band.height,
@@ -369,8 +372,12 @@ test.describe("the control band layout", () => {
 
     expect(Math.abs(phone.arenaWidth - phone.arenaHeight)).toBeLessThan(1);
     expect(phone.bandHeight).toBeGreaterThanOrEqual(140);
+    // The stats sit right under the arena, and the band takes the rest of
+    // the screen rather than leaving a gap under the stats.
+    expect(Math.abs(phone.hudTop - phone.arenaBottom)).toBeLessThan(2);
     expect(phone.arenaBottom).toBeLessThanOrEqual(phone.bandTop + 1);
     expect(phone.bandBottom).toBeLessThanOrEqual(phone.innerHeight + 1);
+    expect(phone.bandBottom).toBeGreaterThanOrEqual(phone.innerHeight - 3);
     expect(phone.scrollHeight).toBeLessThanOrEqual(phone.innerHeight + 1);
     expect(phone.scrollWidth).toBeLessThanOrEqual(phone.innerWidth + 1);
   });
