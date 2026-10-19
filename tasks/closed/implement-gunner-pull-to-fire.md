@@ -93,5 +93,5 @@ DOM plus the space key, `controls-check.js` the helper arithmetic, and
 
 Limitations: whether pull-to-fire fires when the player means it to — and
 how far the second stage's pull should travel — is a feel question only a
-real device can settle; it stays with
-`tasks/open/deploy-shared-playtest-instance.md`, which now names it.
+real device can settle; it was left to
+`tasks/closed/deploy-shared-playtest-instance.md`, which named it.

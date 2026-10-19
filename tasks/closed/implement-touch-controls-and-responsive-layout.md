@@ -40,7 +40,7 @@ Mobile-browser support per the README (MVP item 7) and the scheme settled in
 
 The browser suite plays a ready lobby for each role and asserts the posted
 intents; a local Node or curl check confirms the server decodes them. The
-touch feel itself (dead zone, reach, no accidental zoom) is a two-device
+touch feel itself (dead zone, reach, no accidental zoom) was a two-device
 playtest item for `deploy-shared-playtest-instance.md`.
 
 ## Outcome
@@ -125,6 +125,7 @@ the poster sends and turns the turret to the posted aim.
 
 Limitations: nothing here has been touched by a human thumb. The dead zone,
 the band height, the fire-button reach, and "no accidental zoom" are feel
-claims that only the two-device playtest can settle, which is
-`deploy-shared-playtest-instance.md`. The Playwright half of the suite cannot
-run on the Android dev device, so the browser tests were verified in CI only.
+claims that only the two-device playtest can settle; that question was
+routed to `deploy-shared-playtest-instance.md`, whose outcome records it.
+The Playwright half of the suite cannot run on the Android dev device, so
+the browser tests were verified in CI only.

@@ -104,7 +104,6 @@ test time (a stationary ship is only hit by chance, and there are no
 controls yet to steer into a rock on purpose), so the browser game-over
 case serves the page canned snapshots from its route and asserts the
 shipped panel code; that is the one deliberate stub in the suite, and it
-is documented in `features/testing.md`. The two-device pass is left to
-the `deploy-shared-playtest-instance.md` playtest, which is still gated
-on touch controls. The browser suite cannot run on the Android dev
-device, so all Playwright verification is CI-only.
+is documented in `features/testing.md`. The two-device pass was left to
+the `deploy-shared-playtest-instance.md` playtest. The browser suite cannot
+run on the Android dev device, so all Playwright verification is CI-only.

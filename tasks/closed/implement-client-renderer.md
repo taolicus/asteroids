@@ -65,6 +65,6 @@ green.
 
 Limitations: the visual "no visible stutter" half of the first acceptance
 criterion is not automated — a headless assertion can verify the
-mechanics but not the perception. It is left to the two-device
+mechanics but not the perception. It was left to the two-device
 `deploy-shared-playtest-instance.md` playtest. The browser suite cannot
 run on the Android dev device, so all Playwright verification is CI-only.

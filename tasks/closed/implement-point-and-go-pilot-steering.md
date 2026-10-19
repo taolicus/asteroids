@@ -99,6 +99,6 @@ settle at -2.5000 while the gunner's `aim` kept working, and the fake-DOM
 
 Limitations: the playtest feel — how far the throttle push should travel,
 and whether a heading command reads as "point and go" in the hand — is not
-something the dev device can settle; it stays with
-`tasks/open/deploy-shared-playtest-instance.md`, which now names it.
+something the dev device can settle; it was left to
+`tasks/closed/deploy-shared-playtest-instance.md`, which named it.
 

@@ -45,19 +45,19 @@ Verified on the host:
   automatically as a new PID with the service still active.
 - Logs: `journalctl -u asteroids` shows startup and the killed process.
 
-Remaining before this can close:
+## Outcome
 
-- Run the two-device playtest that the main acceptance criteria require.
+Closed after the playtest: the game was played with other people on the
+deployed instance — players on their own devices joined through the share
+link and completed rounds, which is the part of the acceptance criteria
+the host checks above could not cover.
 
-The deployed build (most recently the pilot's point-and-go stick and the
-gunner's one stick, `tasks/closed/implement-point-and-go-pilot-steering.md`
-and `tasks/closed/implement-gunner-pull-to-fire.md`) is live and serving
-`controls.js` from the host, so the playtest can begin. What the playtest has
-to settle: the round flow and replay on two devices, the touch feel the
-controls tasks could not verify (dead zone, band reach, no accidental zoom or
-page scroll), whether the gunner's relative aim — "drag the direction you
-want to point" — is learnable without instruction, whether pull-to-fire
-fires when the player means it to and not while merely aiming, and whether
-the pilot's point-and-go stick reads as a heading in the hand. Both sticks
-put a second stage on the pull distance, so how far that pull has to travel
-is part of the same question.
+What those sessions raised was fixed as it came up: the band and stats
+leaving the controls stranded in the middle of the screen, the stick's
+throw growing with the band (it is held to the band's floor now), and
+nothing telling a first-time player where to press (the resting stand-in,
+`features/controls.md`). With that, the feel questions this task was named
+for — the gunner's relative aim being learnable without instruction,
+pull-to-fire firing when the player means it and not while merely aiming,
+the pilot's point-and-go reading as a heading, and how far the pull has to
+travel — have no answers left outstanding.
