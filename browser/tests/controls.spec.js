@@ -363,6 +363,7 @@ test.describe("the control band layout", () => {
         bandTop: band.top,
         bandBottom: band.bottom,
         bandHeight: band.height,
+        bottomPadding: parseFloat(getComputedStyle(document.querySelector("main")).paddingBottom),
         innerHeight,
         innerWidth,
         scrollHeight: scroll.scrollHeight,
@@ -373,11 +374,11 @@ test.describe("the control band layout", () => {
     expect(Math.abs(phone.arenaWidth - phone.arenaHeight)).toBeLessThan(1);
     expect(phone.bandHeight).toBeGreaterThanOrEqual(140);
     // The stats sit right under the arena, and the band takes the rest of
-    // the screen rather than leaving a gap under the stats.
+    // the screen: only main's bottom padding is below it.
     expect(Math.abs(phone.hudTop - phone.arenaBottom)).toBeLessThan(2);
     expect(phone.arenaBottom).toBeLessThanOrEqual(phone.bandTop + 1);
     expect(phone.bandBottom).toBeLessThanOrEqual(phone.innerHeight + 1);
-    expect(phone.bandBottom).toBeGreaterThanOrEqual(phone.innerHeight - 3);
+    expect(phone.bandBottom).toBeGreaterThanOrEqual(phone.innerHeight - phone.bottomPadding - 1);
     expect(phone.scrollHeight).toBeLessThanOrEqual(phone.innerHeight + 1);
     expect(phone.scrollWidth).toBeLessThanOrEqual(phone.innerWidth + 1);
   });
