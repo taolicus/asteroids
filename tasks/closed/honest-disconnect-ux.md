@@ -1,3 +1,7 @@
+---
+area: protocol
+---
+
 # Honest disconnect and absence UX
 
 Requested after a disconnection review: enumerate what players see when
@@ -53,3 +57,21 @@ what was chosen.
   a fake clock via a `rooms.Manager` clock seam).
 - Browser (CI): the disconnect badge mid-round with the round still
   playable, and the error screen's way home.
+
+## Outcome
+
+Shipped in `Tell a player when their friend leaves` (`7b46c74`), deployed
+and byte-verified on `https://asteroids.pifia.net`.
+
+`go vet` and `go test -race ./...` pass in CI, as do the browser specs
+including the new `presence.spec.js` and the extended full-room case. The
+client half was also exercised locally without Playwright (a fake-DOM
+harness driving the shipped `handleFrame`, `applyPresence`,
+`updateRoundPanel`, and `updateHud`), since browser specs run only in CI
+from this device.
+
+Not done, deliberately: the lobby waiting copy still does not distinguish
+"waiting for a friend to join" from "the host is not here yet" (P4). A
+real-absence browser test was also skipped in favour of canned frames:
+15 s of TTL plus the 5 s presence tick is not worth the CI time, and the
+server's production of the frames is covered by the Go stream test.
