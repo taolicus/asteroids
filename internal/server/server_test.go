@@ -90,6 +90,25 @@ func lobbyStatus(t *testing.T, ts *testServer, id, token string) (*http.Response
 	return doJSON(t, http.MethodGet, fmt.Sprintf("%s/api/lobby/%s", ts.URL, id), token)
 }
 
+// postLeave sends a leave beacon body (a closing tab's sendBeacon cannot
+// set headers, so the token rides in the JSON body) and returns the raw
+// response.
+func postLeave(t *testing.T, ts *testServer, id, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/api/lobby/%s/leave", ts.URL, id), strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { res.Body.Close() })
+	return res
+}
+
 // postIntent sends a raw intent body and returns the response with its
 // body still readable by the caller.
 func postIntent(t *testing.T, ts *testServer, id, token, body string) *http.Response {
@@ -288,6 +307,48 @@ func TestLobbyIDValidation(t *testing.T) {
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status %q = %d, want 404", bad, res.StatusCode)
 		}
+	}
+}
+
+// TestLeaveMarksThePlayerAbsentAtOnce covers the beacon a closing tab
+// sends: the room must notice immediately instead of waiting out the
+// presence TTL, and the token rules must match the rest of the API.
+func TestLeaveMarksThePlayerAbsentAtOnce(t *testing.T) {
+	ts := newTestServer(t)
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	res := postLeave(t, ts, id, `{"token":"`+guestToken+`"}`)
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("guest leave = %d, want 204", res.StatusCode)
+	}
+	// The owner's poll (which refreshes only the owner) sees the room
+	// waiting with the guest gone.
+	_, data := lobbyStatus(t, ts, id, ownerToken)
+	if data["state"] != "waiting" || data["guest"] != false || data["owner"] != true {
+		t.Fatalf("after guest leave = %v, want waiting with only the owner present", data)
+	}
+
+	// The owner's own beacon works through the credential, and a bad
+	// token changes nothing.
+	res = postLeave(t, ts, id, `{"token":"`+ownerToken+`"}`)
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("owner leave = %d, want 204", res.StatusCode)
+	}
+	if res = postLeave(t, ts, id, `{"token":"wrong-token"}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unknown token = %d, want 401", res.StatusCode)
+	}
+	if res = postLeave(t, ts, id, `{}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("empty token = %d, want 401", res.StatusCode)
+	}
+	if res = postLeave(t, ts, id, `not json`); res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("malformed body = %d, want 400", res.StatusCode)
+	}
+	if res = postLeave(t, ts, "short", `{"token":"x"}`); res.StatusCode != http.StatusNotFound {
+		t.Fatalf("malformed id = %d, want 404", res.StatusCode)
+	}
+	// Leaving must not create an instance the way entering does.
+	if res = postLeave(t, ts, "zzzzzzzzzzzz", `{"token":"x"}`); res.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown lobby = %d, want 404", res.StatusCode)
 	}
 }
 

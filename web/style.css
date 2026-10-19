@@ -83,6 +83,28 @@ h1 {
   display: grid;
   place-items: center;
   width: 100%;
+  /* Anchors the disconnect badge, which must not take layout from the
+     arena it sits over. */
+  position: relative;
+}
+
+/* A mid-round disconnect is told twice: this badge over the arena while
+   the round runs, and the round panel's waiting line once it pauses. It
+   never takes an event, so the controls underneath are unaffected. */
+#friend-note {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #3d4f7a;
+  border-radius: 999px;
+  background: #161b2ae6;
+  color: #e0b98a;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 body.playing main {
@@ -291,6 +313,11 @@ button:active {
 #round-stats {
   color: #aeb4c2;
   font-variant-numeric: tabular-nums;
+}
+
+#friend-wait {
+  color: #767d8d;
+  font-size: 0.875rem;
 }
 
 #error-message {

@@ -138,6 +138,77 @@ func TestGuestReconnectWithinPresenceTTL(t *testing.T) {
 	}
 }
 
+func TestLeaveMarksAbsentAtOnce(t *testing.T) {
+	m, clock := newTestManager()
+	if _, _, err := m.Enter(testLobby, true); err != nil {
+		t.Fatal(err)
+	}
+	_, guestToken, err := m.Enter(testLobby, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A closing tab's beacon must not wait out the TTL: the seat reads
+	// absent immediately (seen through the owner, whose Status does not
+	// refresh the guest).
+	if err := m.Leave(testLobby, guestToken, false); err != nil {
+		t.Fatalf("guest leave: %v", err)
+	}
+	st, err := m.Status(testLobby, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.State != StateWaiting || st.GuestPresent {
+		t.Fatalf("after guest leave = %+v, want waiting with no guest", st)
+	}
+
+	// With both seats absent the instance reclaims on the usual grace,
+	// which is also how the owner's absence is observed without a Status
+	// call re-presenting them.
+	if err := m.Leave(testLobby, "", true); err != nil {
+		t.Fatalf("owner leave: %v", err)
+	}
+	m.Sweep()
+	clock.advance(IdleGrace + time.Second)
+	m.Sweep()
+	if m.Len() != 0 {
+		t.Fatalf("instances = %d after both left, want 0", m.Len())
+	}
+}
+
+func TestLeaveAuthentication(t *testing.T) {
+	m, clock := newTestManager()
+	m.Enter(testLobby, true)
+	_, oldToken, _ := m.Enter(testLobby, false)
+
+	if err := m.Leave("missinglobby", oldToken, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown lobby err = %v, want ErrNotFound", err)
+	}
+	if err := m.Leave(testLobby, "", false); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("empty token err = %v, want ErrUnauthorized", err)
+	}
+	if err := m.Leave(testLobby, "wrong-token", false); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("wrong token err = %v, want ErrUnauthorized", err)
+	}
+
+	// The guest lapses and their seat is taken by a new guest; the stale
+	// token must not mark the new holder absent.
+	clock.advance(PresenceTTL + time.Second)
+	if _, _, err := m.Enter(testLobby, false); err != nil {
+		t.Fatalf("new guest: %v", err)
+	}
+	if err := m.Leave(testLobby, oldToken, false); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale guest token err = %v, want ErrUnauthorized", err)
+	}
+	st, err := m.Status(testLobby, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.GuestPresent {
+		t.Fatal("stale token marked the new guest absent")
+	}
+}
+
 func TestStatusAuthentication(t *testing.T) {
 	m, _ := newTestManager()
 	m.Enter(testLobby, true)

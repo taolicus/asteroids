@@ -55,6 +55,10 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
   otherwise. A guest waiting in a lobby whose owner is playing
   elsewhere therefore sees `waiting` until the owner returns — the
   owner's seat stays reserved throughout (the "busy" case).
+- A closing tab does not wait out the grace: `pagehide` sends a beacon to
+  `POST /api/lobby/{id}/leave` (see below), which marks that seat absent
+  at once. Backgrounded or locked devices do not fire `pagehide`, so
+  those still rely on the TTL — which is the point of having both.
 
 ## Instance lifecycle
 
@@ -64,8 +68,9 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
   instances with no connected player for the idle grace (60s). There is
   no age cap: a lobby a player is waiting in must not be killed. Memory
   is bounded by concurrently connected players.
-- Tests inject the clock (`m.now`) and call `Sweep` directly, so
-  reclaim is tested without sleeping.
+- Tests inject the clock (`m.now`, or `Manager.SetClock` from outside the
+  package) and call `Sweep` directly, so reclaim is tested without
+  sleeping.
 
 ## API
 
@@ -80,6 +85,14 @@ recorded in `tasks/closed/player-owned-lobby-rooms.md` and
 - `GET /api/lobby/{id}` with `X-Player-Token` → the same body without a
   new token, refreshing presence. 404 unknown instance; 401 missing or
   unknown token.
+- `POST /api/lobby/{id}/leave` with `{"token": "<player token>"}` in the
+  body → 204, marking that seat absent at once. The token rides in the
+  body because `navigator.sendBeacon` cannot set headers; it authenticates
+  exactly like everywhere else. The owner's credential and a live guest
+  token both work, an unknown one is 401, and leaving never creates the
+  instance the way entering does (404). A stale guest token (the seat has
+  since been taken by someone else) is refused too, so a late beacon
+  cannot mark the current holder absent.
 - `path` is the relative share link (`/?r=<id>`), so no public base URL
   is configured.
 
@@ -99,7 +112,35 @@ There is no create button and no home screen. The client polls status every
 2s while the lobby is waiting for its second player; once both seats are
 filled it stops polling, opens the live snapshot stream, and renders the
 shared arena (`features/renderer.md`). It re-enters when an instance has
-been reclaimed (404) or a guest seat was lost (401), and returns to polling
-if the room is waiting again (409). Full (409) and malformed-link (404)
-cases render readable states, never a broken screen. The UI is covered
-by browser tests (`features/testing.md`).
+been reclaimed (404) or a guest seat was lost (401), and returns to
+polling when the stream itself refuses to open because the room is
+waiting again (409). Full (409) and malformed-link (404) cases render
+readable states, never a broken screen — and the error screen offers
+"Go to my room" (`/`), because reloading would keep the bad link in the
+URL and land on the same error. The UI is covered by browser tests
+(`features/testing.md`).
+
+### Disconnects and absence
+
+The stream is the only channel that can report the other seat while a
+round runs, so it carries it: the server writes `event: presence` with
+`data: {"present": <bool>}` whenever the other seat's presence flips
+(both start present, since a ready lobby is what opens a stream). The
+client reads it as `game.opponentPresent` and reacts on the next frame:
+
+- Mid-round, a "Friend disconnected" badge appears over the arena and
+  nothing else changes: the round plays on solo, because a restart would
+  throw away the surviving player's round. The absent player's intent
+  goes neutral within the sim's own freshness window, so the ship does
+  not fly on a stale held input.
+- At game over, `Play again` is replaced by "Waiting for your friend to
+  come back…" — a restart needs both seats, so the button would only
+  409 — and comes back the moment presence does.
+- An intent 409 (the room is not ready) means a seat is absent, so it
+  marks the absence instead of dropping the player back to the lobby
+  panel mid-round. The poster stops on that 409 and `revive()`s when the
+  friend returns, so a player who kept holding a control resumes sending
+  without re-pressing.
+
+A friend who returns within the TTL is invisible to all of this: their
+own request refreshes presence and the round resumes mid-flight.

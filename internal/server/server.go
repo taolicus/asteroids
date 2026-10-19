@@ -235,6 +235,48 @@ func handlerWithTimings(m *rooms.Manager, iss *identity.Issuer, sessions *game.S
 		writeJSON(w, http.StatusOK, restartResponse{OK: true})
 	})
 
+	// leave marks a player absent at once, so a closing tab does not
+	// leave the other player waiting out the presence TTL. A beacon
+	// cannot set headers, so the token rides in the body; it authenticates
+	// the same way as everywhere else.
+	mux.HandleFunc("POST /api/lobby/{id}/leave", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !identity.ValidID(id) {
+			httpError(w, http.StatusNotFound, rooms.ErrNotFound)
+			return
+		}
+		if r.ContentLength > maxIntentBytes {
+			httpError(w, http.StatusRequestEntityTooLarge, errIntentTooLarge)
+			return
+		}
+		var body struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIntentBytes)).Decode(&body); err != nil {
+			log.Printf("leave %s rejected: %v", id, err)
+			httpError(w, http.StatusBadRequest, err)
+			return
+		}
+		if body.Token == "" {
+			log.Printf("leave %s rejected: no player token", id)
+			httpError(w, http.StatusUnauthorized, rooms.ErrUnauthorized)
+			return
+		}
+		if err := m.Leave(id, body.Token, isOwner(iss, id, body.Token)); err != nil {
+			switch {
+			case errors.Is(err, rooms.ErrNotFound):
+				httpError(w, http.StatusNotFound, err)
+			case errors.Is(err, rooms.ErrUnauthorized):
+				log.Printf("leave %s rejected: unknown player token", id)
+				httpError(w, http.StatusUnauthorized, err)
+			default:
+				httpError(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("GET /api/lobby/{id}/events", func(w http.ResponseWriter, r *http.Request) {
 		serveEvents(w, r, m, iss, sessions, tm)
 	})

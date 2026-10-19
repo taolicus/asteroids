@@ -131,8 +131,11 @@ with one `seq` counter per poster:
 - The poster runs only while the phase is `playing` and a control is held,
   so an idle client sends nothing. Outside a round it is *paused*, not
   stopped: a control held across the boundary is sent when play begins.
-- 401 and 404 stop it and re-enter the room; 409 stops it and resumes
-  polling. A network error is transient, and the next tick tries again.
+- 401 and 404 stop it and re-enter the room; 409 stops it and marks the
+  other seat absent (the room is not ready), and `revive()` restores a
+  poster stopped that way once the friend is back — see
+  `features/rooms.md` for the disconnect flow. A network error is
+  transient, and the next tick tries again.
 
 ## Layout
 

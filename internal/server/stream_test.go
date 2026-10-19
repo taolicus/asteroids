@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,8 +23,15 @@ import (
 // waiting out the production intervals.
 func newTestServerWithTimings(t *testing.T, tm streamTimings) *testServer {
 	t.Helper()
+	return newTestServerWithManagerAndTimings(t, rooms.NewManager(), tm)
+}
+
+// newTestServerWithManagerAndTimings builds the server around a manager
+// the test supplied, so a test can drive presence through its clock.
+func newTestServerWithManagerAndTimings(t *testing.T, m *rooms.Manager, tm streamTimings) *testServer {
+	t.Helper()
 	sessions := game.NewSessions(rooms.IdleGrace)
-	ts := httptest.NewServer(handlerWithTimings(rooms.NewManager(), identity.NewIssuer([]byte(testKey)), sessions, tm))
+	ts := httptest.NewServer(handlerWithTimings(m, identity.NewIssuer([]byte(testKey)), sessions, tm))
 	t.Cleanup(func() {
 		ts.Close()
 		sessions.StopAll()
@@ -393,4 +401,96 @@ func TestEventsSlowReaderDoesNotStallSim(t *testing.T) {
 	if got := sim.Ticks(); got <= before+5 {
 		t.Fatalf("sim stalled while a client did not read: %d ticks then %d", before, got)
 	}
+}
+
+// raceClock is a mutex-guarded fake clock: the handler goroutines read
+// it while the test advances it, so plain fields would race.
+type raceClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *raceClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *raceClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// readEvent reads frames until one carries the wanted event name and
+// returns its data; other events and comments are skipped.
+func readEvent(t *testing.T, lines <-chan string, timeout time.Duration, want string) string {
+	t.Helper()
+	deadline := time.After(timeout)
+	event, data := "", ""
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatalf("stream closed before a %s event", want)
+			}
+			if line == "" {
+				if event == want {
+					return data
+				}
+				event, data = "", ""
+				continue
+			}
+			if v, ok := strings.CutPrefix(line, "event: "); ok {
+				event = v
+				continue
+			}
+			if v, ok := strings.CutPrefix(line, "data: "); ok {
+				data = v
+			}
+		case <-deadline:
+			t.Fatalf("no %s event within the deadline", want)
+			return ""
+		}
+	}
+}
+
+// TestEventsReportOtherSeatPresence checks the one channel a player has
+// for learning the friend left, or came back, while a round runs. The
+// clock is faked because presence expiry is 15 s of real time otherwise.
+func TestEventsReportOtherSeatPresence(t *testing.T) {
+	clock := &raceClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	m := rooms.NewManager()
+	m.SetClock(clock.now)
+	ts := newTestServerWithManagerAndTimings(t, m, streamTimings{
+		heartbeat:    time.Hour,
+		presence:     20 * time.Millisecond,
+		writeTimeout: time.Second,
+	})
+	id, ownerToken, guestToken := readyLobby(t, ts)
+
+	res := openStream(t, ts, id, ownerToken)
+	lines, stop := lineScanner(res.Body)
+	defer stop()
+	// The stream is live before any flip.
+	readSnapshot(t, lines, time.Second)
+
+	// The guest's presence lapses: the stream reports the flip rather
+	// than ending, because the owner's own seat is refreshed by the same
+	// tick.
+	clock.advance(rooms.PresenceTTL + time.Second)
+	if data := readEvent(t, lines, 2*time.Second, "presence"); data != `{"present":false}` {
+		t.Fatalf("presence data = %q, want {\"present\":false}", data)
+	}
+
+	// The guest comes back and the flip is reported the same way.
+	if res, _ := enterLobby(t, ts, id, guestToken); res.StatusCode != http.StatusOK {
+		t.Fatalf("guest re-enter status = %d, want 200", res.StatusCode)
+	}
+	if data := readEvent(t, lines, 2*time.Second, "presence"); data != `{"present":true}` {
+		t.Fatalf("presence data = %q, want {\"present\":true}", data)
+	}
+
+	// The round is still being streamed through both flips.
+	readSnapshot(t, lines, time.Second)
 }

@@ -93,6 +93,15 @@ test("a third player is told the room is full", async ({ page, players }) => {
 
   await expect(third.page.locator("#error")).toBeVisible();
   await expect(third.page.locator("#error-message")).toHaveText("This lobby is already full.");
+
+  // Reloading would land on the same link and the same error; the way
+  // out is the player's own room.
+  await expect(third.page.locator("#home")).toBeVisible();
+  await third.page.locator("#home").click();
+
+  await expect(third.page.locator("#lobby")).toBeVisible();
+  await expect(third.page.locator("#error")).toBeHidden();
+  expect(await shareLink(third.page)).not.toBe(link);
 });
 
 test("a malformed link shows a readable error", async ({ page }) => {

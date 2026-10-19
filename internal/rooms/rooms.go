@@ -160,6 +160,41 @@ func (m *Manager) Enter(id string, asOwner bool) (Status, string, error) {
 	return l.status(now, SeatGuest), token, nil
 }
 
+// Leave marks the player absent at once instead of waiting out their
+// presence TTL. It is what a closing tab's beacon calls; the token rules
+// are the same as Status's, and leaving an instance that has moved on
+// (reclaimed, or the guest seat replaced) is refused rather than
+// applied to whoever sits there now.
+func (m *Manager) Leave(id, token string, asOwner bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	l, ok := m.lobbies[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if asOwner {
+		l.owner.lastSeen = time.Time{}
+		return nil
+	}
+	if token == "" || l.guest == nil ||
+		subtle.ConstantTimeCompare([]byte(token), []byte(l.guest.token)) != 1 {
+		return ErrUnauthorized
+	}
+	l.guest.lastSeen = time.Time{}
+	return nil
+}
+
+// SetClock replaces the manager's clock. Production keeps the wall clock
+// from NewManager; it exists so tests outside this package can exercise
+// presence expiry without waiting out PresenceTTL, and must be called
+// before the manager is served.
+func (m *Manager) SetClock(now func() time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.now = now
+}
+
 // Status reports the caller's view, refreshing their presence. For the
 // owner, asOwner must already be established; for a guest, token must
 // match the instance's guest token.

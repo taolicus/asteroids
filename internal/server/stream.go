@@ -137,6 +137,14 @@ func snapshotFrame(s snapshot) (string, error) {
 	return fmt.Sprintf("event: snapshot\nid: %d\ndata: %s\n\n", s.Seq, data), nil
 }
 
+// presenceFrame is the SSE event that tells a player the other seat's
+// presence changed. It is emitted only on a flip: the stream itself is
+// presence for its own seat, so this is the one channel that can say the
+// friend left (or came back) while a round runs.
+func presenceFrame(present bool) string {
+	return fmt.Sprintf("event: presence\ndata: {\"present\":%t}\n\n", present)
+}
+
 // sseWriter writes frames to one streamed response with a write deadline,
 // then flushes each frame so a client sees it immediately.
 type sseWriter struct {
@@ -160,7 +168,9 @@ func (s sseWriter) write(frame string) error {
 
 // serveEvents streams the room's snapshots to one player as SSE. It
 // authenticates exactly like the lobby endpoints, requires both players
-// to be present, and treats the open stream as presence.
+// to be present, and treats the open stream as presence. The stream is
+// also the one channel that can report the other seat's presence while a
+// round runs: a `presence` event is written on every flip.
 func serveEvents(w http.ResponseWriter, r *http.Request, m *rooms.Manager, iss *identity.Issuer, sessions *game.Sessions, tm streamTimings) {
 	id := r.PathValue("id")
 	if !identity.ValidID(id) {
@@ -233,6 +243,12 @@ func serveEvents(w http.ResponseWriter, r *http.Request, m *rooms.Manager, iss *
 	presence := time.NewTicker(tm.presence)
 	defer presence.Stop()
 
+	// The room was ready to connect, so both seats start present. From
+	// here the presence tick reports the other seat's flips to the
+	// client, which is how it learns the friend left (or came back)
+	// without giving up the round.
+	otherPresent := true
+
 	for {
 		select {
 		case <-r.Context().Done():
@@ -241,8 +257,21 @@ func serveEvents(w http.ResponseWriter, r *http.Request, m *rooms.Manager, iss *
 		case <-presence.C:
 			// A live stream counts as presence. If the seat is gone
 			// (reclaimed or replaced) there is nothing left to stream.
-			if _, err := m.Status(id, token, asOwner); err != nil {
+			st, err := m.Status(id, token, asOwner)
+			if err != nil {
 				return
+			}
+			// The other seat is the guest for an owner's stream and
+			// the owner for a guest's.
+			other := st.OwnerPresent
+			if asOwner {
+				other = st.GuestPresent
+			}
+			if other != otherPresent {
+				otherPresent = other
+				if err := out.write(presenceFrame(other)); err != nil {
+					return
+				}
 			}
 		case <-heartbeat.C:
 			if err := out.write(heartbeatFrame); err != nil {

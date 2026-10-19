@@ -17,6 +17,9 @@
     <h1><span id="rocket" aria-hidden="true">🚀</span>Two Idiots<br>One Ship</h1>
     <div id="stage">
       <canvas id="arena" hidden></canvas>
+      <!-- Over the arena, so a mid-round disconnect is told without
+           taking a pixel of layout from the round. -->
+      <div id="friend-note" hidden>Friend disconnected</div>
     </div>
     <div id="hud" hidden>
       <div class="hud-item"><span class="hud-label">Score</span><span id="hud-score">0</span></div>
@@ -41,6 +44,9 @@
     <section id="round" hidden>
       <p id="round-title"></p>
       <p id="round-stats" hidden></p>
+      <!-- Shown instead of Play again while the friend is gone: a
+           restart needs both players, so the button would only 409. -->
+      <p id="friend-wait" hidden>Waiting for your friend to come back…</p>
       <button id="play-again" hidden>Play again</button>
     </section>
 
@@ -60,6 +66,9 @@
     <section id="error" hidden>
       <p id="error-message"></p>
       <button id="retry">Reload</button>
+      <!-- Reloading keeps the bad link in the URL and lands on the same
+           error again; this is the way back to the player's own room. -->
+      <button id="home">Go to my room</button>
     </section>
   </main>
   <script src="interp.js"></script>

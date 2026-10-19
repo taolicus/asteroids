@@ -111,8 +111,9 @@
   // round is playing, and an urgent change (a release) skips the floor
   // that otherwise coalesces a fast drag. 401/404 mean the seat is gone
   // and 409 that the room is not ready; both stop the poster and let the
-  // caller react. set(), tick(), and the clock are all injected by the
-  // caller, so the timing is testable.
+  // caller react, and a poster stopped by a 409 can be revived once the
+  // room is ready again. set(), tick(), and the clock are all injected by
+  // the caller, so the timing is testable.
   function createPoster(opts) {
     const {
       lobbyId,
@@ -190,6 +191,13 @@
       },
       stop() {
         stopped = true;
+      },
+      // revive undoes a stop caused by a 409, so a room that is ready
+      // again accepts posts without a new poster. A poster stopped by
+      // stop() or a gone seat is never revived: those paths drop it
+      // instead of reviving it.
+      revive() {
+        stopped = false;
       },
       get seq() {
         return seq;

@@ -246,6 +246,9 @@ function startGame() {
     connected: false,
     retryMs: 0,
     timer: 0,
+    // The other seat's presence, as the stream reports it. The room was
+    // ready to connect, so it starts true.
+    opponentPresent: true,
   };
   game = g;
   g.poster = Controls.createPoster({
@@ -258,10 +261,11 @@ function startGame() {
       openLobby(g.lobbyId);
     },
     onNotReady: () => {
-      // The room is waiting again: poll until it is ready.
+      // The room is not ready, which mid-round can only mean a seat is
+      // absent. The round plays on solo and the stream's presence
+      // events bring the poster back when the friend returns.
       if (game !== g) return;
-      stopGame();
-      startPolling();
+      applyPresence(false, g);
     },
   });
   // The poster starts paused: nothing is sent until a round is playing and
@@ -286,6 +290,7 @@ function stopGame() {
   $("hud").hidden = true;
   $("controls").hidden = true;
   $("round").hidden = true;
+  $("friend-note").hidden = true;
   // Back to the room panel; a poll or a re-entry fills it in again.
   show("lobby");
 }
@@ -297,7 +302,7 @@ function frame(now) {
   const view = g.buffer.sample(now);
   if (view) {
     g.renderer.render(view, now);
-    updateHud(view);
+    updateHud(view, g);
     controls.setView(view);
     controls.setRole(roleName(view).toLowerCase());
     controls.refresh();
@@ -326,12 +331,15 @@ function setPosting(on) {
   }, POST_MS);
 }
 
-function updateHud(view) {
+function updateHud(view, g) {
   setText($("hud-score"), String(view.score));
   setText($("hud-time"), view.time.toFixed(1));
   setText($("hud-lives"), String(Math.max(0, view.lives)));
   setText($("hud-role"), roleName(view));
-  updateRoundPanel(view);
+  updateRoundPanel(view, g);
+  // The badge covers the live round; the round panel tells the same
+  // story once the round pauses.
+  $("friend-note").hidden = g.opponentPresent || view.phase === "over";
 }
 
 // roleName is this player's controls. The server rolls which seat pilots
@@ -346,7 +354,7 @@ function roleName(view) {
 // the announcement that opens it, and the game-over screen that ends it.
 // The final score and survival timer freeze when the round ends, so they
 // are still correct while the screen is up.
-function updateRoundPanel(view) {
+function updateRoundPanel(view, g) {
   const paused = view.phase === "waiting" || view.phase === "over";
   if ($("round").hidden === paused) {
     $("round").hidden = !paused;
@@ -362,6 +370,7 @@ function updateRoundPanel(view) {
     setText($("round-title"),
       role ? `Get ready — you're the ${role.toLowerCase()}` : "Get ready");
     $("round-stats").hidden = true;
+    $("friend-wait").hidden = true;
     $("play-again").hidden = true;
     return;
   }
@@ -369,11 +378,26 @@ function updateRoundPanel(view) {
   setText($("round-stats"),
     `Round ${view.round} · Score ${view.score} · Survived ${view.time.toFixed(1)}s`);
   $("round-stats").hidden = false;
-  $("play-again").hidden = false;
+  // A restart needs both players, so while the friend is gone the button
+  // would only 409. Say what is actually happening instead, and give the
+  // button back the moment presence returns.
+  $("friend-wait").hidden = g.opponentPresent;
+  $("play-again").hidden = !g.opponentPresent;
 }
 
 function setText(el, text) {
   if (el.textContent !== text) el.textContent = text;
+}
+
+// applyPresence records the other seat's presence, which the stream
+// reports on every flip while a round runs. A returning friend revives
+// the poster a 409 stopped, so a player who kept holding a control
+// resumes sending without re-pressing; the badge and the round panel
+// follow from the flag on the next frame.
+function applyPresence(present, g) {
+  if (g.opponentPresent === present) return;
+  g.opponentPresent = present;
+  if (present) g.poster.revive();
 }
 
 // connectStream opens one streaming fetch and reads SSE frames until it
@@ -417,6 +441,9 @@ async function connectStream() {
   g.buffer = new Interp.SnapshotBuffer();
   g.connected = true;
   g.retryMs = 0;
+  // The room was ready to connect, so both seats are present again; this
+  // also revives a poster a 409 stopped during the gap.
+  applyPresence(true, g);
 
   try {
     await readStream(res.body, g);
@@ -457,23 +484,31 @@ async function readStream(body, g) {
   }
 }
 
-// handleFrame extracts the JSON payload of one SSE frame. Comments (the
-// keepalive) carry no data and are ignored.
+// handleFrame extracts one SSE frame's event name and JSON payload.
+// Comments (the keepalive) carry no data and are ignored; a presence
+// event updates the player's view of the other seat, everything else is
+// a snapshot for the interpolation buffer.
 function handleFrame(frame, g) {
+  let event = "";
   const dataLines = [];
   for (let line of frame.split("\n")) {
     if (line.endsWith("\r")) line = line.slice(0, -1);
     if (line.startsWith(":")) continue;
+    if (line.startsWith("event:")) event = line.slice(6).replace(/^ /, "");
     if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
   }
   if (dataLines.length === 0) return;
-  let snap;
+  let data;
   try {
-    snap = JSON.parse(dataLines.join("\n"));
+    data = JSON.parse(dataLines.join("\n"));
   } catch {
     return;
   }
-  g.buffer.push(snap, performance.now());
+  if (event === "presence") {
+    applyPresence(Boolean(data.present), g);
+    return;
+  }
+  g.buffer.push(data, performance.now());
 }
 
 // --- rendering ---
@@ -550,6 +585,12 @@ $("copy").addEventListener("click", async () => {
 
 $("retry").addEventListener("click", () => location.reload());
 
+// The way out of an error is the player's own room: reloading keeps the
+// bad link in the URL and lands on the same error again.
+$("home").addEventListener("click", () => {
+  location.href = "/";
+});
+
 // --- round flow ---
 
 // play-again asks the server for a fresh round. A 409 means the other
@@ -565,6 +606,20 @@ $("play-again").addEventListener("click", async () => {
   } catch {
     // No action: the snapshot stream is the authority on the round.
   }
+});
+
+// --- goodbye ---
+
+// A closing tab says goodbye at once, so the other player is not left
+// waiting out the presence TTL. Backgrounding or locking a device does
+// not fire pagehide, and the open stream's own presence covers both.
+addEventListener("pagehide", () => {
+  if (!session || !session.token || !navigator.sendBeacon) return;
+  const body = new Blob([JSON.stringify({ token: session.token })], {
+    type: "application/json",
+  });
+  navigator.sendBeacon(
+    `${API}/lobby/${encodeURIComponent(session.lobbyId)}/leave`, body);
 });
 
 // --- controls ---
