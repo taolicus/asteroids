@@ -46,7 +46,7 @@ spinner while it waits, a guest entering the link gets the same room and
 the same link, a third player is told the room is full, a malformed link
 shows the error screen, and copy reaches the clipboard.
 
-The controls spec (`browser/tests/controls.spec.js`) has three halves. The
+The controls spec (`browser/tests/controls.spec.js`) has four halves. The
 arithmetic cases run `page.evaluate` against the page's own `Controls`
 module: both sticks (the dead zone, the steer and aim from a drag direction,
 and the two-stage throttle and trigger), the drag clamp, the aim from a
@@ -59,8 +59,12 @@ without thrust and a firm push also thrusts, the release arrives neutral, a
 light gunner pull arrives as `aim` without `fire` and a firm pull also
 fires, the gunner's release stops firing with the aim standing, and the
 keyboard flies the pilot with `rotate`. The layout cases set a phone and a
-landscape viewport and assert the arena is square, the band has its height,
-and the page does not scroll.
+landscape viewport and assert the arena is square, the stats sit under it,
+the band has its height and reaches the bottom of the screen, the page does
+not scroll, and the stick's throw stays fixed while the band grows. The
+resting-hint cases assert the dimmed stand-in is centred in the band,
+behind the live pad, `pointer-events: none`, captioned for each role, and
+dismissed for good by the first pull.
 
 Run locally:
 

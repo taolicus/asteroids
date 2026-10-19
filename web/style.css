@@ -160,6 +160,48 @@ body.playing #controls {
   background: #263150;
 }
 
+/* The resting stand-in: the ghost of the stick, in the middle of the band,
+   so the first thing on a fresh game screen says where a thumb goes and
+   what the control looks like. It never takes an event (pointer-events:
+   none), it is behind the live pad in the DOM, and controls.js takes it
+   away on the first pull so it does not flicker back between pulls. */
+#rest {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Same shapes as the live pad, one size smaller than the ring's hit area
+   and dimmed so it reads as a guide rather than a pressed control: the
+   base is 98px (2 x 0.35 x 140, the stick throw), the knob is 44px like
+   #pad-knob. */
+#rest-pad {
+  width: 98px;
+  height: 98px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #3d4f7a;
+  border-radius: 50%;
+  background: #161b2a40;
+  opacity: 0.75;
+}
+
+#rest-knob {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #4d5c8a;
+  border-radius: 50%;
+  background: #263150;
+}
+
 #hud {
   display: flex;
   gap: 1.5rem;

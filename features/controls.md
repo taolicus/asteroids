@@ -42,9 +42,21 @@ the arena leaves, and only where the stick may *appear* should follow it:
 scaling the stick to the grown band would lengthen the pull to fire, which
 is harder to trigger. The dead zone is 30% of that throw for both, and the
 pilot's throttle zone and the gunner's fire zone are 55%, kept as separate
-constants so either can be tuned alone. All four are starting values. The radius is a fraction, not a
-pixel count, so the throw is the same in portrait and landscape; the band's
-own minimum height is what keeps it reachable on a phone.
+constants so either can be tuned alone. All four are starting values. The
+throw resolves to one pixel size (49px on any band at least 140px wide),
+so a thumb gets the same pull in portrait and landscape; the band's own
+minimum height is what keeps it reachable on a phone.
+
+The band also carries a resting stand-in (`#rest`): the ghost of the
+stick — the same base and knob, dimmed and dashed, the base 98px and the
+knob 44px — centred in the band with a caption under it, so the first
+thing on a fresh game screen says where a thumb goes and what the control
+does ("Pull to move" for the pilot, "Pull to fire" for the gunner). It is
+the band's first child and `pointer-events: none`, so the live pad paints
+over it and it can never take a touch. `setRole()` writes the caption and
+brings it back when a roll changes the player's role; the first
+`showHint()` takes it away for good, so it does not flicker back between
+pulls.
 
 The band follows the round's roll: `app.js` reads the role off the stream
 each frame (`pilot` against its own `seat`) and hands it to `setRole()`,

@@ -578,6 +578,8 @@ const controls = Controls.attach({
   aim: $("aim"),
   base: $("pad-base"),
   knob: $("pad-knob"),
+  rest: $("rest"),
+  restLabel: $("rest-label"),
   canvas,
   onIntent: (payload, urgent) => {
     if (game && game.poster) game.poster.set(payload, urgent);

@@ -204,9 +204,13 @@
   // band, so a touch anywhere in it is in reach.
 
   function attach(opts) {
-    const { band, stick, aim, base, knob, canvas, onIntent } = opts;
+    const { band, stick, aim, base, knob, canvas, rest, restLabel, onIntent } = opts;
 
     let role = "";
+    // The resting stand-in teaches the band once: it appears when a role
+    // is rolled, and the first real pull takes it away for good so it
+    // cannot flicker back between pulls.
+    let restDismissed = false;
     let ship = null;
     let size = 1000;
     let mousePoint = null; // last mouse position over the arena, sim units
@@ -226,14 +230,20 @@
     }
 
     // hideHint hides the floating base and knob, which both roles lose
-    // when the finger lifts.
+    // when the finger lifts. The resting stand-in stays away once a pull
+    // has taught the player where the control is.
     function hideHint() {
       base.hidden = true;
       knob.hidden = true;
+      rest.hidden = !role || restDismissed;
     }
 
     function showHint(clientX, clientY, radius, dx, dy) {
       const r = band.getBoundingClientRect();
+      // The live pad is here now: the stand-in has done its job, and it
+      // does not come back between pulls.
+      rest.hidden = true;
+      restDismissed = true;
       base.hidden = false;
       base.style.width = `${radius * 2}px`;
       base.style.height = `${radius * 2}px`;
@@ -438,6 +448,13 @@
         mousePoint = null;
         lastPayload = "";
         hideHint();
+        // The caption is this role's instruction: the pilot pulls to move
+        // the ship, the gunner pulls to fire. A roll is a new control to
+        // learn, so the stand-in comes back with its own caption.
+        restLabel.textContent =
+          next === "pilot" ? "Pull to move" : next === "gunner" ? "Pull to fire" : "";
+        restDismissed = false;
+        rest.hidden = !next;
         stick.hidden = next !== "pilot";
         aim.hidden = next !== "gunner";
         emit(true);

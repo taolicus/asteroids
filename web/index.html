@@ -26,6 +26,12 @@
     </div>
 
     <section id="controls" hidden>
+      <!-- The resting stand-in: first child so it paints behind the live
+           pad, and pointer-events:none so it can never take a touch. -->
+      <div id="rest" hidden>
+        <div id="rest-pad"><div id="rest-knob"></div></div>
+        <p id="rest-label" class="hint"></p>
+      </div>
       <div id="stick" hidden></div>
       <div id="aim" hidden></div>
       <div id="pad-base" hidden></div>

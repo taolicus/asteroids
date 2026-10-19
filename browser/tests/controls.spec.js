@@ -426,3 +426,57 @@ test.describe("the control band layout", () => {
     expect(sized.radius).toBeCloseTo(sized.expected, 1);
   });
 });
+
+test.describe("the resting hint", () => {
+  test("shows a dimmed stick behind the pad, captioned for the role", async ({
+    page,
+    players,
+  }) => {
+    const roles = await ready(page, players);
+
+    for (const [role, caption] of [
+      ["pilot", "Pull to move"],
+      ["gunner", "Pull to fire"],
+    ]) {
+      const hint = await roles[role].evaluate(() => {
+        const rest = document.getElementById("rest");
+        const stick = document.getElementById("stick");
+        const pad = document.getElementById("rest-pad").getBoundingClientRect();
+        const band = document.getElementById("controls").getBoundingClientRect();
+        return {
+          hidden: rest.hidden,
+          label: document.getElementById("rest-label").textContent,
+          pointerEvents: getComputedStyle(rest).pointerEvents,
+          // The live pad is later in the band, so it paints over this.
+          behind: Boolean(rest.compareDocumentPosition(stick) & Node.DOCUMENT_POSITION_FOLLOWING),
+          offCentre: Math.abs(pad.left + pad.width / 2 - (band.left + band.width / 2)),
+        };
+      });
+
+      expect(hint.hidden, `${role} shows the stand-in`).toBe(false);
+      expect(hint.label).toBe(caption);
+      expect(hint.pointerEvents).toBe("none");
+      expect(hint.behind).toBe(true);
+      expect(hint.offCentre).toBeLessThan(1);
+    }
+  });
+
+  test("is dismissed by the first pull and stays away", async ({ page, players }) => {
+    const roles = await ready(page, players);
+    const pilot = roles.pilot;
+
+    const box = await pilot.locator("#stick").boundingBox();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+
+    await pilot.mouse.move(cx, cy);
+    await pilot.mouse.down();
+    await pilot.mouse.move(cx + 30, cy - 30); // a real pull
+
+    expect(await pilot.locator("#rest").isHidden()).toBe(true);
+
+    // It must not flicker back between pulls: the player knows now.
+    await pilot.mouse.up();
+    expect(await pilot.locator("#rest").isHidden()).toBe(true);
+  });
+});
