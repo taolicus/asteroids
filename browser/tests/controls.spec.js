@@ -232,12 +232,12 @@ test.describe("the control band", () => {
     const box = await pilot.locator("#stick").boundingBox();
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
-    // The zones are fractions of the stick radius, which is a fraction of
-    // the band's shorter side, so push by those fractions rather than by
-    // pixels that only fit one viewport.
+    // The zones are fractions of the stick radius, which is the band's
+    // floor and not its grown height, so push by those fractions rather
+    // than by pixels that only fit one viewport.
     const push = await pilot.evaluate(() => {
       const r = document.getElementById("stick").getBoundingClientRect();
-      const radius = Controls.STICK_RADIUS * Math.min(r.width, r.height);
+      const radius = Controls.stickRadius(r.width);
       return {
         light: ((Controls.DEAD_ZONE + Controls.THROTTLE_ZONE) / 2) * radius,
         firm: ((Controls.THROTTLE_ZONE + 1) / 2) * radius,
@@ -285,12 +285,12 @@ test.describe("the control band", () => {
     const box = await gunner.locator("#aim").boundingBox();
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
-    // The zones are fractions of the stick radius, which is a fraction of
-    // the band's shorter side, so push by those fractions rather than by
-    // pixels that only fit one viewport.
+    // The zones are fractions of the stick radius, which is the band's
+    // floor and not its grown height, so push by those fractions rather
+    // than by pixels that only fit one viewport.
     const push = await gunner.evaluate(() => {
       const r = document.getElementById("aim").getBoundingClientRect();
-      const radius = Controls.STICK_RADIUS * Math.min(r.width, r.height);
+      const radius = Controls.stickRadius(r.width);
       return {
         light: ((Controls.DEAD_ZONE + Controls.FIRE_ZONE) / 2) * radius,
         firm: ((Controls.FIRE_ZONE + 1) / 2) * radius,
@@ -404,5 +404,24 @@ test.describe("the control band layout", () => {
     expect(landscape.arenaWidth).toBeGreaterThan(0);
     expect(landscape.bandBottom).toBeLessThanOrEqual(landscape.innerHeight + 1);
     expect(landscape.scrollHeight).toBeLessThanOrEqual(landscape.innerHeight + 1);
+  });
+
+  // The band grows so a thumb gets room to land, but the stick's throw
+  // does not grow with it: a longer pull to fire is harder to trigger,
+  // and the throw was already right when the band was at its floor.
+  test("keeps the stick's throw fixed while the band grows", async ({ page, players }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await ready(page, players);
+
+    const sized = await page.evaluate(() => {
+      const band = document.getElementById("controls").getBoundingClientRect();
+      return {
+        bandHeight: band.height,
+        radius: Controls.stickRadius(band.width),
+      };
+    });
+
+    expect(sized.bandHeight).toBeGreaterThan(200);
+    expect(sized.radius).toBeCloseTo(Controls.STICK_RADIUS * Controls.STICK_FLOOR, 1);
   });
 });

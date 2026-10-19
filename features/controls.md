@@ -36,11 +36,13 @@ a time and shows only that role's controls.
   sent, so the remembered aim stands and a resting thumb cannot spin the
   gun. The aim survives the finger lifting; the lift only stops the fire.
 
-Both sticks share a radius of 35% of the band's shorter side — a thumb's
-throw, and enough range for the distance to carry the second stage. The
-dead zone is 30% of that radius for both, and the pilot's throttle zone and
-the gunner's fire zone are 55%, kept as separate constants so either can be
-tuned alone. All four are starting values. The radius is a fraction, not a
+Both sticks share a throw of 35% of the band's **floor** (the `min-height`
+on `#controls`), not of the band's box. The band grows to fill the height
+the arena leaves, and only where the stick may *appear* should follow it:
+scaling the stick to the grown band would lengthen the pull to fire, which
+is harder to trigger. The dead zone is 30% of that throw for both, and the
+pilot's throttle zone and the gunner's fire zone are 55%, kept as separate
+constants so either can be tuned alone. All four are starting values. The radius is a fraction, not a
 pixel count, so the throw is the same in portrait and landscape; the band's
 own minimum height is what keeps it reachable on a phone.
 
@@ -123,11 +125,14 @@ with one `seq` counter per poster:
 ## Layout
 
 While a round is up the page stops scrolling (`body.playing`): the arena,
-then the stats, then the band tile the screen, the band takes whatever
-height the arena leaves and never drops below 140 px, and the lobby panel
-is hidden so a phone spends its height on the arena. The stage is
-content-sized (`flex: 0 0 auto`), which is what puts the stats directly
-under the canvas, and the band grows (`flex: 1 1 auto`) into the leftover.
+then the stats (with a `0.5rem` top padding to breathe), then the band
+tile the screen, the band takes whatever height the arena leaves and never
+drops below 140 px, and the lobby panel is hidden so a phone spends its
+height on the arena. The stage is content-sized (`flex: 0 0 auto`), which
+is what puts the stats right under the canvas, and the band grows
+(`flex: 1 1 auto`) into the leftover. The band's height is only *where*
+the stick may appear — the throw itself is measured from the band's floor,
+so growing the band does not lengthen the pull to fire.
 
 The arena is always square and is sized in `resize()` from the viewport,
 not from the stage: the largest square that leaves the stats and the

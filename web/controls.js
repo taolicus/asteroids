@@ -20,14 +20,28 @@
 })(globalThis, function () {
   "use strict";
 
-  // Starting values from the settled scheme. The radius is a fraction of
-  // the zone's shorter side, so a thumb gets the same throw in portrait
-  // and landscape; it is large enough that the pull *distance* means
-  // something, which is what the second stage needs.
+  // Starting values from the settled scheme. The stick's throw is large
+  // enough that the pull *distance* means something, which is what the
+  // second stage needs; it is measured from the band's floor so it is the
+  // same in portrait and landscape (see stickRadius).
   const DEAD_ZONE = 0.3; // fraction of the stick radius
   const THROTTLE_ZONE = 0.55; // past this the pilot also burns
   const FIRE_ZONE = 0.55; // past this the gunner also fires
-  const STICK_RADIUS = 0.35; // fraction of the zone's shorter side
+  const STICK_RADIUS = 0.35; // fraction of the stick's reference size
+  // STICK_FLOOR is the band's floor, `min-height: 140px` on #controls in
+  // style.css. The band grows to fill the height the arena leaves, and
+  // only where the stick may *appear* should follow it.
+  const STICK_FLOOR = 140;
+
+  // stickRadius is the stick's throw for a band of the given width. The
+  // reference is the band's floor rather than the band's box: the band
+  // grows to fill the height the arena leaves, and only where the stick
+  // may *appear* should follow it — a stick scaled to the grown band
+  // would lengthen the pull to fire. The width is still a bound so a
+  // narrow band keeps the stick on screen.
+  function stickRadius(width) {
+    return STICK_RADIUS * Math.min(width, STICK_FLOOR);
+  }
 
   // --- stick and aim geometry ---
 
@@ -239,7 +253,7 @@
         e.preventDefault();
         el.setPointerCapture(e.pointerId);
         const r = el.getBoundingClientRect();
-        const radius = STICK_RADIUS * Math.min(r.width, r.height);
+        const radius = stickRadius(r.width);
         pad.drag = {
           pointerId: e.pointerId,
           x: e.clientX,
@@ -454,8 +468,10 @@
     THROTTLE_ZONE,
     FIRE_ZONE,
     STICK_RADIUS,
+    STICK_FLOOR,
     attach,
     fitStick,
+    stickRadius,
     stickSteer,
     stickAim,
     aimFromDrag,

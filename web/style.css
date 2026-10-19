@@ -167,6 +167,10 @@ body.playing #controls {
   width: 100%;
   max-width: 640px;
   font-variant-numeric: tabular-nums;
+  /* A breath between the arena and the stats. Padding rather than margin
+     so resize(), which sizes the arena against the HUD's offsetHeight,
+     counts it and the band keeps its floor. */
+  padding-top: 0.5rem;
 }
 
 .hud-item {

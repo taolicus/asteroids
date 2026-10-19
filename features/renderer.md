@@ -72,9 +72,10 @@ The landing heading — the rocket and the title, one `h1` — and the lobby
 panel are hidden while a round plays, so a phone spends that height on the
 arena; the arena and HUD are unhidden when the round starts and hidden
 again on exit. While playing, `main` is a `100dvh` column with no gap or
-top padding and the stage is content-sized, so the HUD sits directly under
-the canvas and the control band takes the rest of the screen
-(`features/controls.md` has the sizing rules).
+top padding and the stage is content-sized, so the HUD sits right under
+the canvas (with a `0.5rem` top padding of its own) and the control band
+takes the rest of the screen (`features/controls.md` has the sizing
+rules).
 
 Roles are rolled per round, so each player is told theirs rather than
 assuming one: `app.js` compares the stream's `pilot` with the session's
