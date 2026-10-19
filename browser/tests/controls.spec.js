@@ -418,10 +418,11 @@ test.describe("the control band layout", () => {
       return {
         bandHeight: band.height,
         radius: Controls.stickRadius(band.width),
+        expected: Controls.STICK_RADIUS * Controls.STICK_FLOOR,
       };
     });
 
     expect(sized.bandHeight).toBeGreaterThan(200);
-    expect(sized.radius).toBeCloseTo(Controls.STICK_RADIUS * Controls.STICK_FLOOR, 1);
+    expect(sized.radius).toBeCloseTo(sized.expected, 1);
   });
 });
