@@ -1,5 +1,7 @@
 # Two Idiots, One Ship
 
+Play it: https://asteroids.pifia.net
+
 ## Overview
 A browser-based, two-player cooperative micro-game inspired by the classic arcade game Asteroids. Players share one spaceship and must survive an asteroid field together. The game is designed for quick, accessible sessions lasting 1–3 minutes, joined through a simple shareable link.
 
